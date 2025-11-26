@@ -8,17 +8,15 @@ def main():
     data = np.load("camera_calib.npz")
     K = data["K"].astype(np.float32)
     dist = data["dist"].astype(np.float32)
-    calib_w, calib_h = data["image_size"]  # [width, height]
-    rms = data["rms"]
+    calib_w, calib_h = data["image_size"]
 
     print("Loaded camera_calib.npz")
     print("Calibration image size:", calib_w, calib_h)
-    print("RMS reprojection error:", rms)
     print("K:\n", K)
     print("dist:\n", dist.ravel())
 
     # ---------- 2) Start CSI camera at calibration size ----------
-    cam_w, cam_h = int(calib_w), int(calib_h)   # use same size as chessboard images
+    cam_w, cam_h = 1280, 720    # use same size as chessboard images
 
     camera = CSICamera(
         width=cam_w,
@@ -29,10 +27,20 @@ def main():
         flip_method=0
     )
     camera.running = True
-    print("CSI camera started at", cam_w, "x", cam_h)
+    sx = cam_w / float(calib_w)
+    sy = cam_h / float(calib_h)
+
+    K_live = K.copy()
+    K_live[0, 0] *= sx  # fx
+    K_live[1, 1] *= sy  # fy
+    K_live[0, 2] *= sx  # cx
+    K_live[1, 2] *= sy  # cy
+
+    print("Calibration image size:", calib_w, calib_h)
+    print("Camera size:", cam_w, cam_h)
+    print("Scaled K_live:\n", K_live)
 
     # ---------- 3) Undistortion maps (no scaling, same size as calibration) ----------
-    K_live = K.copy()
     newK = K_live
 
     map1, map2 = cv.initUndistortRectifyMap(
