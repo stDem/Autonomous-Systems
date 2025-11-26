@@ -11,7 +11,7 @@ def draw_centreline_from_bev(und, bev, H, src_pts,
                              deg=2,
                              stride=4,
                              min_white_per_row=30,
-                             debug=False):
+                             debug=True):
     """
     und      : undistorted original image (BGR)
     bev      : bird's-eye-view image (BGR)
