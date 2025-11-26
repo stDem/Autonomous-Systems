@@ -65,7 +65,7 @@ def draw_centreline_from_bev(
     absGx = cv.convertScaleAbs(Gx)
 
     # threshold for edges – LOWER now
-    tmin = 5            # was 30
+    tmin = 10            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
