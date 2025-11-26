@@ -59,11 +59,11 @@ def main():
     print("Press ESC to cancel.")
 
     while True:
-        frame_rgb = camera.value
-        if frame_rgb is None:
+        frame_bgr = camera.value
+        if frame_bgr is None:
             continue
 
-        frame_bgr = cv.cvtColor(frame_rgb, cv.COLOR_RGB2BGR)
+        # frame_bgr = cv.cvtColor(frame_rgb, cv.COLOR_RGB2BGR)
         und = cv.remap(frame_bgr, map1, map2, interpolation=cv.INTER_LINEAR)
 
         # draw already-clicked points
@@ -120,11 +120,11 @@ def main():
 
     try:
         while True:
-            frame_rgb = camera.value
-            if frame_rgb is None:
+            frame_bgr = camera.value
+            if frame_bgr is None:
                 continue
 
-            frame_bgr = cv.cvtColor(frame_rgb, cv.COLOR_RGB2BGR)
+            # frame_bgr = cv.cvtColor(frame_rgb, cv.COLOR_RGB2BGR)
             und = cv.remap(frame_bgr, map1, map2, interpolation=cv.INTER_LINEAR)
             bev = cv.warpPerspective(und, H, (bev_w, bev_h), flags=cv.INTER_LINEAR)
 
