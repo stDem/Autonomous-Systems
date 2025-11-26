@@ -34,18 +34,20 @@ def draw_centreline_from_bev(
     # ---------------- Step 1: BGR -> HSV ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
-    # ---------------- Step 2: Color mask ----------------
-    # Assume centreline is white OR orange-ish.
-    # White-ish: low saturation, high value
-    lower_white = np.array([0, 0, 180], dtype=np.uint8)
-    upper_white = np.array([179, 60, 255], dtype=np.uint8)
+    # ---------------- Step 2: Color mask (wider ranges) ----------------
+    bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
-    # Orange/yellow-ish: mid H, high S, high V (tune if needed)
+    # White-ish line: low saturation, high-ish value
+    lower_white = np.array([0, 0, 130], dtype=np.uint8)
+    upper_white = np.array([179, 80, 255], dtype=np.uint8)
+
+    # Orange/yellow-ish centreline: adjust if your line is more red/brown
     lower_orange = np.array([5, 80, 80], dtype=np.uint8)
-    upper_orange = np.array([35, 255, 255], dtype=np.uint8)
+    upper_orange = np.array([40, 255, 255], dtype=np.uint8)
 
     mask_white = cv.inRange(bev_hsv, lower_white, upper_white)
     mask_orange = cv.inRange(bev_hsv, lower_orange, upper_orange)
+
     color_mask = cv.bitwise_or(mask_white, mask_orange)
 
     # Fill small gaps
@@ -56,14 +58,14 @@ def draw_centreline_from_bev(
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
 
+
     # ---------------- Step 3: Gradient mask (Sobel) ----------------
-    # We care mainly about vertical-ish lines in BEV, so use horizontal gradient Gx.
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
     Gx = cv.Sobel(gray, cv.CV_16S, 1, 0, ksize=3)
     absGx = cv.convertScaleAbs(Gx)
 
-    # threshold for edges; tune tmin if needed
-    tmin = 30
+    # threshold for edges – LOWER now
+    tmin = 10            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -74,7 +76,13 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    combined = cv.bitwise_and(color_mask, grad_mask)
+    USE_GRADIENT = False   # <<< start with False
+
+    if USE_GRADIENT:
+        combined = cv.bitwise_and(color_mask, grad_mask)
+    else:
+        combined = color_mask.copy()
+
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
     combined = cv.morphologyEx(combined, cv.MORPH_CLOSE, kernel, iterations=1)
 
@@ -82,6 +90,14 @@ def draw_centreline_from_bev(
         cv.imshow("step4_combined_mask", combined)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
+
+    print(
+        "non-zero pixels:",
+        "color =", cv.countNonZero(color_mask),
+        "grad  =", cv.countNonZero(grad_mask),
+        "comb  =", cv.countNonZero(combined),
+    )
+
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
     points = []  # (x_mean, y)
