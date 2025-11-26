@@ -14,7 +14,7 @@ def draw_centreline_from_bev(
     src_pts,
     deg=2,
     stride=4,
-    min_white_per_row=20,
+    min_white_per_row=10,
     debug=False,
     save_debug_prefix=None,
 ):
@@ -65,7 +65,7 @@ def draw_centreline_from_bev(
     absGx = cv.convertScaleAbs(Gx)
 
     # threshold for edges – LOWER now
-    tmin = 10            # was 30
+    tmin = 5            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -85,18 +85,19 @@ def draw_centreline_from_bev(
 
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
     combined = cv.morphologyEx(combined, cv.MORPH_CLOSE, kernel, iterations=1)
+    combined = cv.dilate(combined, np.ones((3, 3), np.uint8), iterations=1)
 
     if debug:
         cv.imshow("step4_combined_mask", combined)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
-    print(
-        "non-zero pixels:",
-        "color =", cv.countNonZero(color_mask),
-        "grad  =", cv.countNonZero(grad_mask),
-        "comb  =", cv.countNonZero(combined),
-    )
+    # print(
+    #     "non-zero pixels:",
+    #     "color =", cv.countNonZero(color_mask),
+    #     "grad  =", cv.countNonZero(grad_mask),
+    #     "comb  =", cv.countNonZero(combined),
+    # )
 
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
