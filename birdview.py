@@ -92,12 +92,12 @@ def draw_centreline_from_bev(
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
-    print(
-        "non-zero pixels:",
-        "color =", cv.countNonZero(color_mask),
-        "grad  =", cv.countNonZero(grad_mask),
-        "comb  =", cv.countNonZero(combined),
-    )
+    # print(
+    #     "non-zero pixels:",
+    #     "color =", cv.countNonZero(color_mask),
+    #     "grad  =", cv.countNonZero(grad_mask),
+    #     "comb  =", cv.countNonZero(combined),
+    # )
 
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
