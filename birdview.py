@@ -33,7 +33,8 @@ def main():
 
     # ---------- 3) Undistortion maps (no scaling, same size as calibration) ----------
     K_live = K.copy()
-    newK, _ = cv.getOptimalNewCameraMatrix(K_live, dist, (cam_w, cam_h), alpha=0)
+    newK = K_live
+
     map1, map2 = cv.initUndistortRectifyMap(
         K_live, dist, None, newK, (cam_w, cam_h), cv.CV_16SC2
     )
