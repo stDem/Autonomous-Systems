@@ -35,6 +35,7 @@ def draw_centreline_from_bev(
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # ---------------- Step 2: Color mask (wider ranges) ----------------
+    # ---------------- Step 2: Color mask (wider ranges) ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # White-ish line: low saturation, high-ish value
@@ -59,13 +60,14 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
 
 
-    # ---------------- Step 3: Gradient mask (Sobel) ----------------
+
+        # ---------------- Step 3: Gradient mask (Sobel) ----------------
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
     Gx = cv.Sobel(gray, cv.CV_16S, 1, 0, ksize=3)
     absGx = cv.convertScaleAbs(Gx)
 
     # threshold for edges – LOWER now
-    tmin = 20            # was 30
+    tmin = 10            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -85,7 +87,6 @@ def draw_centreline_from_bev(
 
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
     combined = cv.morphologyEx(combined, cv.MORPH_CLOSE, kernel, iterations=1)
-    combined = cv.dilate(combined, np.ones((3, 3), np.uint8), iterations=1)
 
     if debug:
         cv.imshow("step4_combined_mask", combined)
@@ -318,8 +319,8 @@ def main():
                     und, bev, H, src_pts,
                     deg=2,
                     stride=4,
-                    min_white_per_row=20,
-                    debug=True,
+                    min_white_per_row=10,    # looser
+                    debug=True,              # see windows for one frame
                     save_debug_prefix="debug_bev"
                 )
             else:
