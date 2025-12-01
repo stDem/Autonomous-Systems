@@ -35,7 +35,6 @@ def draw_centreline_from_bev(
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # ---------------- Step 2: Color mask ----------------
-    # ---------------- Step 2: Color mask (wider ranges) ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # White-ish line: low saturation, high-ish value
@@ -58,7 +57,6 @@ def draw_centreline_from_bev(
         cv.imshow("step2_color_mask", color_mask)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
-
 
 
     # ---------------- Step 3: Gradient mask (Sobel) ----------------

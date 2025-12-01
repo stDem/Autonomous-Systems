@@ -96,15 +96,37 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (x_mean, y)
+    points = []  # (x_selected, y)
+
+    # start tracking from image centre
+    x_prev = w_bev / 2.0
+
+    # we only care about the central region horizontally (ignore far left/right noise)
+    roi_x_min = int(w_bev * 0.2)
+    roi_x_max = int(w_bev * 0.8)
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
-        xs = np.where(row > 0)[0]
-        if xs.size >= min_white_per_row:
-            x_mean = float(xs.mean())
-            points.append((x_mean, float(y)))
 
+        # restrict to central ROI in x
+        row_roi = row[roi_x_min:roi_x_max]
+        xs_roi = np.where(row_roi > 0)[0]  # indices in ROI coordinates
+
+        if xs_roi.size < min_white_per_row:
+            # not enough pixels in this row -> skip
+            continue
+
+        # convert ROI indices to full-image x positions
+        xs = xs_roi + roi_x_min
+
+        # choose the pixel closest to the previous x (follows one branch)
+        idx = np.argmin(np.abs(xs - x_prev))
+        x_selected = float(xs[idx])
+
+        points.append((x_selected, float(y)))
+        x_prev = x_selected  # update for next row
+
+    # visualisation of chosen points
     bev_pts_vis = bev.copy()
     for (x, y) in points:
         cv.circle(bev_pts_vis, (int(x), int(y)), 3, (0, 0, 255), -1)
@@ -121,6 +143,7 @@ def draw_centreline_from_bev(
     pts = np.array(points)
     xs = pts[:, 0]
     ys = pts[:, 1]
+
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
     coeffs = np.polyfit(ys, xs, deg)
