@@ -96,37 +96,37 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (c, r) = (x, y) pairs
+    points = []  # (c, r) = (x, y)
 
-    # we only care about the central region horizontally (tune if needed)
+    # only use a central horizontal band to avoid walls / side noise
     roi_x_min = int(w_bev * 0.1)
     roi_x_max = int(w_bev * 0.9)
 
     # maximum allowed jump in x between successive rows (pixels)
-    max_dx_per_row = w_bev * 0.15  # 15% of width per step, tune
+    max_dx_per_row = w_bev * 0.15  # 15% of width per row, tune if needed
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
 
-        # restrict to central ROI to ignore far-left/right noise
+        # restrict to central ROI
         row_roi = row[roi_x_min:roi_x_max]
         xs_roi = np.where(row_roi > 0)[0]  # indices inside ROI
 
         if xs_roi.size < min_white_per_row:
-            # not enough white pixels -> skip this row
+            # not enough white pixels -> no reliable centre here
             continue
 
         # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
 
-        # assignment spec: use average column index of white pixels
-        c = float(xs.mean())   # average column index
+        # assignment spec: average column index of white pixels
+        c = float(xs.mean())
 
-        # simple outlier rejection: don't allow insane jumps from previous point
+        # simple outlier rejection: don't allow huge jumps
         if points:
             x_prev, y_prev = points[-1]
             if abs(c - x_prev) > max_dx_per_row:
-                # jump too large -> likely noise, skip this row
+                # jump too large -> likely noise on this row
                 continue
 
         points.append((c, float(y)))
