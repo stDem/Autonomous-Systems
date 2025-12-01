@@ -96,14 +96,14 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (x_selected, y)
+    points = []  # (x_center, y)
 
-    # start tracking from image centre
+    # start with image centre as initial guess
     x_prev = w_bev / 2.0
 
-    # we only care about the central region horizontally (ignore far left/right noise)
-    roi_x_min = int(w_bev * 0.2)
-    roi_x_max = int(w_bev * 0.8)
+    # horizontal ROI to ignore far left/right noise (tune if needed)
+    roi_x_min = int(w_bev * 0.1)   # was 0.2
+    roi_x_max = int(w_bev * 0.9)   # was 0.8
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
@@ -119,9 +119,14 @@ def draw_centreline_from_bev(
         # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
 
-        # choose the pixel closest to the previous x (follows one branch)
-        idx = np.argmin(np.abs(xs - x_prev))
-        x_selected = float(xs[idx])
+        # --- NEW: estimate lane width and centre ---
+        x_left = float(xs.min())
+        x_right = float(xs.max())
+        x_center = 0.5 * (x_left + x_right)  # middle between left & right edges
+
+        # optional smoothing with previous centre to avoid jitter
+        alpha_center = 0.7
+        x_selected = alpha_center * x_prev + (1.0 - alpha_center) * x_center
 
         points.append((x_selected, float(y)))
         x_prev = x_selected  # update for next row
@@ -143,7 +148,6 @@ def draw_centreline_from_bev(
     pts = np.array(points)
     xs = pts[:, 0]
     ys = pts[:, 1]
-
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
     coeffs = np.polyfit(ys, xs, deg)
