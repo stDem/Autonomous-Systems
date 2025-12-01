@@ -14,7 +14,7 @@ def draw_centreline_from_bev(
     src_pts,
     deg=2,
     stride=4,
-    min_white_per_row=10,
+    min_white_per_row=20,
     debug=False,
     save_debug_prefix=None,
 ):
@@ -34,8 +34,7 @@ def draw_centreline_from_bev(
     # ---------------- Step 1: BGR -> HSV ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
-    # ---------------- Step 2: Color mask (wider ranges) ----------------
-    # ---------------- Step 2: Color mask (wider ranges) ----------------
+    # ---------------- Step 2: Color mask ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # White-ish line: low saturation, high-ish value
@@ -60,14 +59,14 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
 
 
-
-        # ---------------- Step 3: Gradient mask (Sobel) ----------------
+    # ---------------- Step 3: Gradient mask (Sobel) ----------------
+    # We care mainly about vertical-ish lines in BEV, so use horizontal gradient Gx.
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
     Gx = cv.Sobel(gray, cv.CV_16S, 1, 0, ksize=3)
     absGx = cv.convertScaleAbs(Gx)
 
-    # threshold for edges – LOWER now
-    tmin = 10            # was 30
+    # threshold for edges; tune tmin if needed
+    tmin = 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -78,13 +77,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = False   # <<< start with False
-
-    if USE_GRADIENT:
-        combined = cv.bitwise_and(color_mask, grad_mask)
-    else:
-        combined = color_mask.copy()
-
+    combined = cv.bitwise_and(color_mask, grad_mask)
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
     combined = cv.morphologyEx(combined, cv.MORPH_CLOSE, kernel, iterations=1)
 
@@ -92,14 +85,6 @@ def draw_centreline_from_bev(
         cv.imshow("step4_combined_mask", combined)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
-
-    # print(
-    #     "non-zero pixels:",
-    #     "color =", cv.countNonZero(color_mask),
-    #     "grad  =", cv.countNonZero(grad_mask),
-    #     "comb  =", cv.countNonZero(combined),
-    # )
-
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
     points = []  # (x_mean, y)
@@ -181,7 +166,6 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step7_und_with_centreline.png", und_with_overlay)
 
     return und_with_overlay, bev_with_line
-
 
 # ============================================================
 # Main: Bird's-eye view + live centreline overlay
@@ -323,6 +307,7 @@ def main():
                     debug=True,              # see windows for one frame
                     save_debug_prefix="debug_bev"
                 )
+
             else:
                 und_vis, bev_vis = draw_centreline_from_bev(
                     und, bev, H, src_pts,
@@ -345,7 +330,6 @@ def main():
         camera.running = False
         cv.destroyAllWindows()
         print("Stopped camera and closed windows")
-
 
 if __name__ == "__main__":
     main()
