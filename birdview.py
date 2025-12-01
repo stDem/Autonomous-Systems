@@ -27,6 +27,12 @@ def draw_centreline_from_bev(
     stride   : row stride when scanning from bottom up
     debug    : if True, show intermediate images with cv.imshow
     save_debug_prefix: if not None, save PNGs for each step, e.g. 'debug_frame'
+
+    Returns:
+        und_with_overlay : original view with ROI + centreline
+        bev_with_line    : BEV view with centreline
+        coeffs           : np.array of polynomial coefficients (or None)
+        points           : list of (x_mean, y) points used to fit poly
     """
 
     h_bev, w_bev = bev.shape[:2]
@@ -35,8 +41,6 @@ def draw_centreline_from_bev(
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # ---------------- Step 2: Color mask (wider ranges) ----------------
-    bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
-
     # White-ish line: low saturation, high-ish value
     lower_white = np.array([0, 0, 130], dtype=np.uint8)
     upper_white = np.array([179, 80, 255], dtype=np.uint8)
@@ -58,14 +62,13 @@ def draw_centreline_from_bev(
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
 
-
     # ---------------- Step 3: Gradient mask (Sobel) ----------------
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
     Gx = cv.Sobel(gray, cv.CV_16S, 1, 0, ksize=3)
     absGx = cv.convertScaleAbs(Gx)
 
-    # threshold for edges – LOWER now
-    tmin = 20            # was 30
+    # threshold for edges
+    tmin = 20
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -76,7 +79,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = False   # <<< start with False
+    USE_GRADIENT = False   # you can set True later for stricter mask
 
     if USE_GRADIENT:
         combined = cv.bitwise_and(color_mask, grad_mask)
@@ -91,14 +94,6 @@ def draw_centreline_from_bev(
         cv.imshow("step4_combined_mask", combined)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
-
-    # print(
-    #     "non-zero pixels:",
-    #     "color =", cv.countNonZero(color_mask),
-    #     "grad  =", cv.countNonZero(grad_mask),
-    #     "comb  =", cv.countNonZero(combined),
-    # )
-
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
     points = []  # (x_mean, y)
@@ -121,14 +116,14 @@ def draw_centreline_from_bev(
 
     if len(points) < deg + 1:
         # not enough data – return original images unchanged
-        return und, bev
+        return und, bev, None, points
 
     pts = np.array(points)
     xs = pts[:, 0]
     ys = pts[:, 1]
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
-    coeffs = np.polyfit(ys, xs, deg)
+    coeffs = np.polyfit(ys, xs, deg)   # x as function of y
     poly = np.poly1d(coeffs)
 
     centreline_bev = []
@@ -179,8 +174,79 @@ def draw_centreline_from_bev(
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step7_und_with_centreline.png", und_with_overlay)
 
-    return und_with_overlay, bev_with_line
+    return und_with_overlay, bev_with_line, coeffs, points
 
+def compute_max_speed_from_poly(
+    coeffs,
+    h_bev,
+    y_min_fraction=2/3,   # lower third of the image
+    y_max_fraction=1.0,
+    meters_per_pixel_y=0.01,
+    meters_per_pixel_x=0.01,
+    mu=0.5,
+    g=9.81,
+    kappa_clip=5.0,
+):
+    """
+    Compute maximum allowed speed based on lane curvature.
+
+    coeffs : polynomial coefficients for x(y) in pixel coordinates
+    h_bev  : BEV image height in pixels
+    y_min_fraction, y_max_fraction : which region in y to inspect (e.g. lower third)
+    meters_per_pixel_* : pixel -> meter scaling (approximate)
+    mu   : friction/grip coefficient (linoleum ~ 0.5)
+    g    : gravity [m/s^2]
+    kappa_clip : clamp curvature to avoid crazy outliers
+
+    Returns:
+        v_max_mps : max speed [m/s]
+        kappa_max : max curvature [1/m]
+        R_min     : min radius [m]
+    """
+
+    if coeffs is None:
+        return 0.0, 0.0, float("inf")
+
+    poly = np.poly1d(coeffs)
+    dpoly = np.polyder(poly, 1)
+    ddpoly = np.polyder(poly, 2)
+
+    y0 = int(h_bev * y_min_fraction)
+    y1 = int(h_bev * y_max_fraction)
+
+    curvatures = []
+    for y_pix in range(y0, y1):
+        x_prime_pix = dpoly(y_pix)
+        x_dprime_pix = ddpoly(y_pix)
+
+        # convert derivatives from pixels to meters
+        dy_m = meters_per_pixel_y
+        dx_m = meters_per_pixel_x
+
+        # dx/dy in meters per meter (unitless slope)
+        x_prime = (dx_m / dy_m) * x_prime_pix
+        x_dprime = (dx_m / (dy_m ** 2)) * x_dprime_pix
+
+        # curvature κ = |x''| / (1 + x'^2)^(3/2)
+        kappa = abs(x_dprime) / (1.0 + x_prime ** 2) ** 1.5  # [1/m]
+        curvatures.append(kappa)
+
+    if not curvatures:
+        return 0.0, 0.0, float("inf")
+
+    kappa_max = max(curvatures)
+    kappa_max = min(kappa_max, kappa_clip)  # clip outliers
+
+    if kappa_max < 1e-6:  # essentially straight
+        R_min = float("inf")
+        v_max = 3.0  # some default maximum speed [m/s]; tune as desired
+    else:
+        R_min = 1.0 / kappa_max
+        # lateral acceleration constraint: a_lat = v^2 / R <= mu * g
+        # => v_max = sqrt(mu * g * R)
+        v_max = (mu * g * R_min) ** 0.5
+
+    return float(v_max), float(kappa_max), float(R_min)
 
 # ============================================================
 # Main: Bird's-eye view + live centreline overlay
@@ -296,12 +362,22 @@ def main():
 
     H = cv.getPerspectiveTransform(src_pts, dst_pts)
     print("Homography H:\n", H)
-
-    # ---------- 6) Live bird’s-eye + centreline ----------
-    print("=== LIVE BIRD-VIEW + CENTRELINE MODE ===")
+    # ---------- 6) Live bird’s-eye + centreline + speed ----------
+    print("=== LIVE BIRD-VIEW + CENTRELINE + SPEED MODE ===")
     print("Press ESC to exit.")
 
-    frame_idx = 0  # to save debug images only for the first frame
+    frame_idx = 0
+
+    # EMA (Exponential Moving Average) of polynomial coefficients
+    coeffs_ema = None
+    ema_alpha = 0.8  # closer to 1.0 = slower changes
+
+    # EMA of speed (for smooth commands)
+    speed_ema = 0.0
+    speed_alpha = 0.8
+
+    speed_history = []   # for plotting
+    graph_h, graph_w = 200, 400  # pixels of speed graph window
 
     try:
         while True:
@@ -314,7 +390,7 @@ def main():
 
             # For the first frame, enable debug + save PNGs
             if frame_idx == 0:
-                und_vis, bev_vis = draw_centreline_from_bev(
+                und_vis, bev_vis, coeffs, points = draw_centreline_from_bev(
                     und, bev, H, src_pts,
                     deg=2,
                     stride=4,
@@ -323,7 +399,7 @@ def main():
                     save_debug_prefix="debug_bev"
                 )
             else:
-                und_vis, bev_vis = draw_centreline_from_bev(
+                und_vis, bev_vis, coeffs, points = draw_centreline_from_bev(
                     und, bev, H, src_pts,
                     deg=2,
                     stride=4,
@@ -334,8 +410,77 @@ def main():
 
             frame_idx += 1
 
-            cv.imshow("Undistorted + Centreline", und_vis)
+            # --------- Lane confidence (how many rows had valid points) ---------
+            max_rows = (bev_h - bev_h // 2) // 4  # approx for stride=4
+            if max_rows > 0:
+                confidence = min(1.0, len(points) / max_rows)
+            else:
+                confidence = 0.0
+
+            # --------- Smooth polynomial coefficients (EMA) ---------
+            if coeffs is not None:
+                if coeffs_ema is None:
+                    coeffs_ema = coeffs
+                else:
+                    coeffs_ema = ema_alpha * coeffs_ema + (1.0 - ema_alpha) * coeffs
+
+            # --------- Compute curvature-based max speed ---------
+            if coeffs_ema is not None:
+                v_max, kappa_max, R_min = compute_max_speed_from_poly(
+                    coeffs_ema,
+                    h_bev=bev_h,
+                    y_min_fraction=2/3,   # lower third of BEV
+                    y_max_fraction=1.0,
+                    meters_per_pixel_y=0.01,
+                    meters_per_pixel_x=0.01,
+                    mu=0.5,
+                    g=9.81,
+                    kappa_clip=5.0,
+                )
+            else:
+                v_max, kappa_max, R_min = 0.0, 0.0, float("inf")
+
+            # --------- Safety: scale speed by lane confidence ---------
+            v_conf = v_max * confidence
+
+            # Clip speed to a reasonable range for your car
+            v_conf = max(0.0, min(v_conf, 3.0))  # [m/s], tune 3.0 as your top speed
+
+            # --------- Smooth speed (momentum term) ---------
+            if speed_history:
+                speed_ema = speed_alpha * speed_ema + (1.0 - speed_alpha) * v_conf
+            else:
+                speed_ema = v_conf
+
+            # Store for graph
+            speed_history.append(speed_ema)
+            if len(speed_history) > graph_w:
+                speed_history.pop(0)
+
+            # --------- Draw simple speed graph ---------
+            graph = np.zeros((graph_h, graph_w, 3), dtype=np.uint8)
+            cv.line(graph, (0, graph_h - 1), (graph_w - 1, graph_h - 1), (255, 255, 255), 1)
+            cv.line(graph, (0, 0), (0, graph_h - 1), (255, 255, 255), 1)
+
+            max_speed_for_graph = 3.0  # same as clip above
+            for i, v in enumerate(speed_history):
+                x = i
+                y = int(graph_h - 1 - (v / max_speed_for_graph) * (graph_h - 10))
+                y = np.clip(y, 0, graph_h - 1)
+                graph[y:, x] = (0, 255, 0)  # vertical green bar
+
+            # --------- Text overlay on undistorted image ---------
+            cv.putText(und_vis, f"v_cmd = {speed_ema:.2f} m/s", (20, 40),
+                       cv.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2)
+            cv.putText(und_vis, f"confidence = {confidence:.2f}", (20, 70),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv.putText(und_vis, f"kappa_max = {kappa_max:.2f} 1/m", (20, 100),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+
+            # --------- Show windows ---------
+            cv.imshow("Undistorted + Centreline + Speed", und_vis)
             cv.imshow("Bird View + Centreline", bev_vis)
+            cv.imshow("Speed graph (m/s)", graph)
 
             key = cv.waitKey(1) & 0xFF
             if key == 27:  # ESC
