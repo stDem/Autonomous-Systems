@@ -68,7 +68,7 @@ def draw_centreline_from_bev(
     absGx = cv.convertScaleAbs(Gx)
 
     # threshold for edges
-    tmin = 20
+    tmin = 20            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
@@ -79,7 +79,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = False   # you can set True later for stricter mask
+    USE_GRADIENT = False   # <<< start with False
 
     if USE_GRADIENT:
         combined = cv.bitwise_and(color_mask, grad_mask)
@@ -115,7 +115,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step5_centre_points_bev.png", bev_pts_vis)
 
     if len(points) < deg + 1:
-        # not enough data – return original images unchanged
+        # not enough data – return original images unchanged, no polynomial
         return und, bev, None, points
 
     pts = np.array(points)
@@ -123,7 +123,7 @@ def draw_centreline_from_bev(
     ys = pts[:, 1]
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
-    coeffs = np.polyfit(ys, xs, deg)   # x as function of y
+    coeffs = np.polyfit(ys, xs, deg)
     poly = np.poly1d(coeffs)
 
     centreline_bev = []
@@ -176,6 +176,7 @@ def draw_centreline_from_bev(
 
     return und_with_overlay, bev_with_line, coeffs, points
 
+
 def compute_max_speed_from_poly(
     coeffs,
     h_bev,
@@ -192,7 +193,7 @@ def compute_max_speed_from_poly(
 
     coeffs : polynomial coefficients for x(y) in pixel coordinates
     h_bev  : BEV image height in pixels
-    y_min_fraction, y_max_fraction : which region in y to inspect (e.g. lower third)
+    y_min_fraction, y_max_fraction : which y-region to inspect (e.g. lower third)
     meters_per_pixel_* : pixel -> meter scaling (approximate)
     mu   : friction/grip coefficient (linoleum ~ 0.5)
     g    : gravity [m/s^2]
@@ -489,6 +490,7 @@ def main():
         camera.running = False
         cv.destroyAllWindows()
         print("Stopped camera and closed windows")
+
 
 
 if __name__ == "__main__":
