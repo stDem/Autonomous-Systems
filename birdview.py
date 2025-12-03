@@ -41,11 +41,11 @@ def draw_centreline_from_bev(
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # ---------------- Step 2: Brightness mask in grayscale ----------------
-    gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
+    # gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
+    T = 146 
+    V = bev_hsv[:, :, 2]   # brightness channel
 
-    # simple global threshold: pixels brighter than T are "line"
-    T = 146  # try 150–180, tune if needed
-    _, color_mask = cv.threshold(gray, T, 255, cv.THRESH_BINARY)
+    _, color_mask = cv.threshold(V, T, 255, cv.THRESH_BINARY)
 
     kernel_small = np.ones((3, 3), np.uint8)
     color_mask = cv.morphologyEx(color_mask, cv.MORPH_OPEN, kernel_small, iterations=1)
@@ -73,7 +73,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = True   # now lean on gradient
+    USE_GRADIENT = True
 
     if USE_GRADIENT:
         combined = cv.bitwise_and(color_mask, grad_mask)
