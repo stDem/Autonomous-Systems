@@ -40,18 +40,13 @@ def draw_centreline_from_bev(
     # ---------------- Step 1: BGR -> HSV ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
-    # ---------------- Step 2: Color mask (wider ranges) ----------------
-    bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
+    # ---------------- Step 2: Brightness mask in grayscale ----------------
+    gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
 
-    # Strong white: very low saturation, high value
-    # tweak these numbers if needed
-    lower_white = np.array([0, 0, 180], dtype=np.uint8)
-    upper_white = np.array([179, 30, 255], dtype=np.uint8)
+    # simple global threshold: pixels brighter than T are "line"
+    T = 160  # try 150–180, tune if needed
+    _, color_mask = cv.threshold(gray, T, 255, cv.THRESH_BINARY)
 
-    # Only use white for now; do NOT include orange
-    color_mask = cv.inRange(bev_hsv, lower_white, upper_white)
-
-    # Clean up small holes / noise
     kernel_small = np.ones((3, 3), np.uint8)
     color_mask = cv.morphologyEx(color_mask, cv.MORPH_OPEN, kernel_small, iterations=1)
     color_mask = cv.dilate(color_mask, kernel_small, iterations=1)
@@ -59,7 +54,7 @@ def draw_centreline_from_bev(
     if debug:
         cv.imshow("step2_color_mask", color_mask)
     if save_debug_prefix is not None:
-        cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask) 
+        cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
 
     # ---------------- Step 3: Gradient mask (Sobel) ----------------
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
@@ -78,7 +73,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = True
+    USE_GRADIENT = True   # now lean on gradient
 
     if USE_GRADIENT:
         combined = cv.bitwise_and(color_mask, grad_mask)
