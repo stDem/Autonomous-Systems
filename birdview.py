@@ -45,8 +45,8 @@ def draw_centreline_from_bev(
 
     # Strong white: very low saturation, high value
     # tweak these numbers if needed
-    lower_white = np.array([0, 0, 200], dtype=np.uint8)
-    upper_white = np.array([179, 40, 255], dtype=np.uint8)
+    lower_white = np.array([0, 0, 180], dtype=np.uint8)
+    upper_white = np.array([179, 30, 255], dtype=np.uint8)
 
     # Only use white for now; do NOT include orange
     color_mask = cv.inRange(bev_hsv, lower_white, upper_white)
