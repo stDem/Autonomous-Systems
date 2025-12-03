@@ -41,26 +41,25 @@ def draw_centreline_from_bev(
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
     # ---------------- Step 2: Color mask (wider ranges) ----------------
-    # White-ish line: low saturation, high-ish value
-    lower_white = np.array([0, 0, 130], dtype=np.uint8)
-    upper_white = np.array([179, 80, 255], dtype=np.uint8)
+    bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
 
-    # Orange/yellow-ish centreline: adjust if your line is more red/brown
-    lower_orange = np.array([5, 80, 80], dtype=np.uint8)
-    upper_orange = np.array([40, 255, 255], dtype=np.uint8)
+    # Strong white: very low saturation, high value
+    # tweak these numbers if needed
+    lower_white = np.array([0, 0, 200], dtype=np.uint8)
+    upper_white = np.array([179, 40, 255], dtype=np.uint8)
 
-    mask_white = cv.inRange(bev_hsv, lower_white, upper_white)
-    mask_orange = cv.inRange(bev_hsv, lower_orange, upper_orange)
+    # Only use white for now; do NOT include orange
+    color_mask = cv.inRange(bev_hsv, lower_white, upper_white)
 
-    color_mask = cv.bitwise_or(mask_white, mask_orange)
-
-    # Fill small gaps
-    color_mask = cv.dilate(color_mask, np.ones((3, 3), np.uint8), iterations=1)
+    # Clean up small holes / noise
+    kernel_small = np.ones((3, 3), np.uint8)
+    color_mask = cv.morphologyEx(color_mask, cv.MORPH_OPEN, kernel_small, iterations=1)
+    color_mask = cv.dilate(color_mask, kernel_small, iterations=1)
 
     if debug:
         cv.imshow("step2_color_mask", color_mask)
     if save_debug_prefix is not None:
-        cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
+        cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask) 
 
     # ---------------- Step 3: Gradient mask (Sobel) ----------------
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
@@ -79,7 +78,7 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
-    USE_GRADIENT = False   # <<< start with False
+    USE_GRADIENT = True
 
     if USE_GRADIENT:
         combined = cv.bitwise_and(color_mask, grad_mask)
@@ -88,7 +87,6 @@ def draw_centreline_from_bev(
 
     kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5))
     combined = cv.morphologyEx(combined, cv.MORPH_CLOSE, kernel, iterations=1)
-    combined = cv.dilate(combined, np.ones((3, 3), np.uint8), iterations=1)
 
     if debug:
         cv.imshow("step4_combined_mask", combined)
@@ -96,37 +94,27 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (c, r) = (x, y)
-
-    # only use a central horizontal band to avoid walls / side noise
+    # central ROI
     roi_x_min = int(w_bev * 0.1)
     roi_x_max = int(w_bev * 0.9)
+    max_dx_per_row = w_bev * 0.15
 
-    # maximum allowed jump in x between successive rows (pixels)
-    max_dx_per_row = w_bev * 0.15  # 15% of width per row, tune if needed
+    points = []
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
-
-        # restrict to central ROI
         row_roi = row[roi_x_min:roi_x_max]
-        xs_roi = np.where(row_roi > 0)[0]  # indices inside ROI
+        xs_roi = np.where(row_roi > 0)[0]
 
         if xs_roi.size < min_white_per_row:
-            # not enough white pixels -> no reliable centre here
             continue
 
-        # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
-
-        # assignment spec: average column index of white pixels
         c = float(xs.mean())
 
-        # simple outlier rejection: don't allow huge jumps
         if points:
-            x_prev, y_prev = points[-1]
+            x_prev, _ = points[-1]
             if abs(c - x_prev) > max_dx_per_row:
-                # jump too large -> likely noise on this row
                 continue
 
         points.append((c, float(y)))
