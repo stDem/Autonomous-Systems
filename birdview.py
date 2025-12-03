@@ -42,7 +42,7 @@ def draw_centreline_from_bev(
 
     # ---------------- Step 2: Brightness mask in grayscale ----------------
     # gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
-    T = 160 
+    T = 155 
     V = bev_hsv[:, :, 2]   # brightness channel
 
     _, color_mask = cv.threshold(V, T, 255, cv.THRESH_BINARY)
@@ -62,7 +62,7 @@ def draw_centreline_from_bev(
     absGx = cv.convertScaleAbs(Gx)
 
     # threshold for edges
-    tmin = 15            # was 30
+    tmin = 25            # was 30
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
