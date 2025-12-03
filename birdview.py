@@ -98,8 +98,10 @@ def draw_centreline_from_bev(
     # 2d) Apply inRange with these dynamic bounds
     color_mask = cv.inRange(bev_hsv, lower_white, upper_white)
 
-    # 2e) Fill small gaps (as in assignment)
     kernel_small = np.ones((3, 3), np.uint8)
+    # remove tiny speckles
+    color_mask = cv.morphologyEx(color_mask, cv.MORPH_OPEN, kernel_small, iterations=1)
+    # keep the line continuous
     color_mask = cv.dilate(color_mask, kernel_small, iterations=1)
 
     if debug:
@@ -201,10 +203,10 @@ def draw_centreline_from_bev(
     for (x, y) in centreline_bev:
         cv.circle(bev_with_line, (int(x), int(y)), 1, (255, 0, 0), -1)
 
-    if debug:
-        cv.imshow("step6_poly_bev", bev_with_line)
-    if save_debug_prefix is not None:
-        cv.imwrite(f"{save_debug_prefix}_step6_poly_bev.png", bev_with_line)
+    # if debug:
+    #     cv.imshow("step6_poly_bev", bev_with_line)
+    # if save_debug_prefix is not None:
+    #     cv.imwrite(f"{save_debug_prefix}_step6_poly_bev.png", bev_with_line)
 
     # ---------------- Step 7: Project centreline back to original ----------------
     H_inv = np.linalg.inv(H)
