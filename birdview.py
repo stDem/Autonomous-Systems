@@ -39,22 +39,74 @@ def draw_centreline_from_bev(
 
     # ---------------- Step 1: BGR -> HSV ----------------
     bev_hsv = cv.cvtColor(bev, cv.COLOR_BGR2HSV)
+    h_bev, w_bev = bev_hsv.shape[:2]
 
-    # ---------------- Step 2: Brightness mask in grayscale ----------------
-    # gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
-    T = 146
-    V = bev_hsv[:, :, 2]   # brightness channel
+    # ---------------- Step 2: Color mask based on centreline HSV ----------------
+    # 2a) Choose a patch where we EXPECT the centreline (bottom–centre of BEV)
+    #    tune these fractions if your line is shifted
+    patch_w_frac = 0.15   # width of patch as fraction of image width
+    patch_h_frac = 0.25   # height of patch as fraction of image height
 
-    _, color_mask = cv.threshold(V, T, 255, cv.THRESH_BINARY)
+    x0 = int(w_bev * (0.5 - patch_w_frac / 2.0))
+    x1 = int(w_bev * (0.5 + patch_w_frac / 2.0))
+    y0 = int(h_bev * (1.0 - patch_h_frac))
+    y1 = h_bev
 
+    patch = bev_hsv[y0:y1, x0:x1]
+
+    # 2b) Keep only bright pixels in that patch (they are likely the line)
+    patch_flat = patch.reshape(-1, 3)
+    V_patch = patch_flat[:, 2]
+    bright_mask = V_patch > (V_patch.mean() + 5)  # "+5" is a small offset; tune if needed
+
+    if np.any(bright_mask):
+        centre_pixels = patch_flat[bright_mask]
+    else:
+        centre_pixels = patch_flat  # fallback: use whole patch
+
+    mean_hsv = centre_pixels.mean(axis=0)
+    std_hsv  = centre_pixels.std(axis=0)
+
+    Hm, Sm, Vm = mean_hsv
+    s_std, v_std = std_hsv[1], std_hsv[2]
+
+    # 2c) Build HSV bounds around the centreline colour
+    # If S is very small, the line is nearly grey -> ignore H (use full [0,179])
+    if Sm < 15:
+        h_low, h_high = 0, 179
+    else:
+        dH = 15
+        h_low  = max(0,   Hm - dH)
+        h_high = min(179, Hm + dH)
+
+    # Saturation: narrow range around Sm
+    dS = max(10, 2 * s_std)          # at least +-10, or wider if noisy
+    s_low  = max(0,   Sm - dS)
+    s_high = min(255, Sm + dS)
+
+    # Value (brightness): we know the line is bright
+    dV = max(15, 2 * v_std)
+    v_low  = max(0,   Vm - dV)
+    v_high = 255      # allow up to max
+
+    lower_white = np.array([h_low,  s_low,  v_low ], dtype=np.uint8)
+    upper_white = np.array([h_high, s_high, v_high], dtype=np.uint8)
+
+    # DEBUG: you can print these once to see what they are
+    # print("centreline HSV mean:", mean_hsv, "lower:", lower_white, "upper:", upper_white)
+
+    # 2d) Apply inRange with these dynamic bounds
+    color_mask = cv.inRange(bev_hsv, lower_white, upper_white)
+
+    # 2e) Fill small gaps (as in assignment)
     kernel_small = np.ones((3, 3), np.uint8)
-    color_mask = cv.morphologyEx(color_mask, cv.MORPH_OPEN, kernel_small, iterations=1)
     color_mask = cv.dilate(color_mask, kernel_small, iterations=1)
 
     if debug:
         cv.imshow("step2_color_mask", color_mask)
     if save_debug_prefix is not None:
         cv.imwrite(f"{save_debug_prefix}_step2_color_mask.png", color_mask)
+
 
     # ---------------- Step 3: Gradient mask (Sobel) ----------------
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
