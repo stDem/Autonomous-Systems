@@ -44,7 +44,7 @@ def draw_centreline_from_bev(
     gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
 
     # simple global threshold: pixels brighter than T are "line"
-    T = 148  # try 150–180, tune if needed
+    T = 146  # try 150–180, tune if needed
     _, color_mask = cv.threshold(gray, T, 255, cv.THRESH_BINARY)
 
     kernel_small = np.ones((3, 3), np.uint8)
