@@ -42,7 +42,7 @@ def draw_centreline_from_bev(
 
     # ---------------- Step 2: Brightness mask in grayscale ----------------
     # gray = cv.cvtColor(bev, cv.COLOR_BGR2GRAY)
-    T = 153 
+    T = 150 
     V = bev_hsv[:, :, 2]   # brightness channel
 
     _, color_mask = cv.threshold(V, T, 255, cv.THRESH_BINARY)
@@ -66,10 +66,10 @@ def draw_centreline_from_bev(
     grad_mask = cv.inRange(absGx, tmin, 255)
 
     if debug:
-        cv.imshow("step3_grad_absGx", absGx)
+        # cv.imshow("step3_grad_absGx", absGx)
         cv.imshow("step3_grad_mask", grad_mask)
     if save_debug_prefix is not None:
-        cv.imwrite(f"{save_debug_prefix}_step3_grad_absGx.png", absGx)
+        # cv.imwrite(f"{save_debug_prefix}_step3_grad_absGx.png", absGx)
         cv.imwrite(f"{save_debug_prefix}_step3_grad_mask.png", grad_mask)
 
     # ---------------- Step 4: Combine masks ----------------
