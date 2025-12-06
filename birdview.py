@@ -144,33 +144,39 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (c, r) = (x, y)
+        # ---------------- Step 5: Find centreline points (row-wise, robust) ----------------
+    points = []  # (x, y)
 
-    # optional: central ROI to ignore walls; keep wide for now
-    roi_x_min = int(w_bev * 0.05)
-    roi_x_max = int(w_bev * 0.95)
+    # Only search in a central horizontal band to avoid orange borders
+    roi_center_frac = 0.25        # half-width of ROI as fraction of image width
+    x_center = w_bev / 2.0
+    roi_x_min = int(x_center - roi_center_frac * w_bev)
+    roi_x_max = int(x_center + roi_center_frac * w_bev)
 
-    # how many white pixels needed in a row to trust it
-    min_white_per_row = 3   # much smaller than before – easier to collect points
+    # Reject sudden sideways "jumps" (likely side line or noise)
+    max_jump = 0.15 * w_bev       # 15% of width per row step
+
+    x_prev = x_center
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
 
         # restrict to central ROI
-        row_roi = row[roi_x_min:roi_x_max]
-        xs_roi = np.where(row_roi > 0)[0]  # indices inside ROI
-
+        row_roi = row[:, roi_x_min:roi_x_max]
+        xs_roi = np.where(row_roi > 0)[0]
         if xs_roi.size < min_white_per_row:
-            # not enough white pixels -> skip this row
             continue
 
-        # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
+        x_mean = float(xs.mean())
 
-        # assignment spec: c = average column index of white pixels
-        c = float(xs.mean())
+        # if we already have a point, reject large sideways jumps
+        if points and abs(x_mean - x_prev) > max_jump:
+            # skip this row, probably wrong branch
+            continue
 
-        points.append((c, float(y)))
+        points.append((x_mean, float(y)))
+        x_prev = x_mean
 
     # visualisation of chosen points
     bev_pts_vis = bev.copy()
@@ -190,8 +196,19 @@ def draw_centreline_from_bev(
     xs = pts[:, 0]
     ys = pts[:, 1]
 
-    # ---------------- Step 6: Polynomial fit x(y) ----------------
-    coeffs = np.polyfit(ys, xs, deg)
+    # ---------------- Step 6: Polynomial fit x(y), using only lower part ----------------
+    # we care most about rows close to the car → bottom ~40% of BEV
+    y_fit_min = h_bev * 0.6
+    mask = ys >= y_fit_min
+    if mask.sum() >= deg + 1:
+        xs_fit = xs[mask]
+        ys_fit = ys[mask]
+    else:
+        xs_fit = xs
+        ys_fit = ys
+
+    coeffs = np.polyfit(ys_fit, xs_fit, deg)
+
     poly = np.poly1d(coeffs)
 
     centreline_bev = []
@@ -548,8 +565,8 @@ def main():
 
             # --------- Safety: scale speed by lane confidence ---------
         # ===============================================
-            v_max_clip = 2.0      # how we clip v_conf, you already found this
-            v_max_physical = 3.0  # used for scaling speed -> throttle
+            v_max_clip = 1.0      # how we clip v_conf, you already found this
+            v_max_physical = 1.0  # used for scaling speed -> throttle
 
             MIN_THROTTLE = 0.12   # experimentally: smallest value where wheels start moving
         # ==============================================
