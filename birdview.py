@@ -550,7 +550,7 @@ def main():
             v_conf = v_max * confidence
 
             # Clip speed to a reasonable range for your car
-            v_conf = max(0.0, min(v_conf, 1.0))  # [m/s], tune 3.0 as your top speed
+            v_conf = max(0.0, min(v_conf, 2.0))  # [m/s], tune 3.0 as your top speed
 
             # --------- Smooth speed (momentum term) ---------
             if speed_history:
