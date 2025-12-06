@@ -623,18 +623,18 @@ def main():
                 steer_to_send = float(steer_ema)
                 steer_to_send = max(-1.0, min(steer_to_send, 1.0))
 
-            car.throttle = float(throttle_cmd)
-            car.steering = float(steer_to_send)
+            # car.throttle = float(throttle_cmd)
+            # car.steering = float(steer_to_send)
 
 
 
             # --------- Store histories for plotting ---------
-            speed_history.append(speed_ema)
-            steer_history.append(steer_ema)
-            if len(speed_history) > graph_w:
-                speed_history.pop(0)
-            if len(steer_history) > graph_w:
-                steer_history.pop(0)
+            # speed_history.append(speed_ema)
+            # steer_history.append(steer_ema)
+            # if len(speed_history) > graph_w:
+            #     speed_history.pop(0)
+            # if len(steer_history) > graph_w:
+            #     steer_history.pop(0)
 
             # --------- Draw combined speed + steering graph (<<< NEW) ---------
             graph = np.zeros((graph_h, graph_w, 3), dtype=np.uint8)
