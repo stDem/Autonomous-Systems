@@ -1,7 +1,7 @@
 import numpy as np
 import cv2 as cv
 from jetcam.csi_camera import CSICamera
-
+import time 
 
 # ============================================================
 # Centreline extraction + visualization (Steps 1–7)
@@ -430,8 +430,9 @@ def main():
 
     H = cv.getPerspectiveTransform(src_pts, dst_pts)
     print("Homography H:\n", H)
-    # ---------- 6) Live bird’s-eye + centreline + speed ----------
-    print("=== LIVE BIRD-VIEW + CENTRELINE + SPEED MODE ===")
+
+    # ---------- 6) Live bird’s-eye + centreline + speed + steering ----------
+    print("=== LIVE BIRD-VIEW + CENTRELINE + SPEED + STEERING MODE ===")
     print("Press ESC to exit.")
 
     frame_idx = 0
@@ -444,8 +445,25 @@ def main():
     speed_ema = 0.0
     speed_alpha = 0.8
 
-    speed_history = []   # for plotting
-    graph_h, graph_w = 200, 400  # pixels of speed graph window
+    # ---- PID steering state & parameters (all <<< NEW) ----
+    Kp = 0.6    # start point; you will tune
+    Ki = 0.0
+    Kd = 0.1
+
+    T_s = 1.0 / 30.0       # assume 30 FPS; fine for now
+    e_prev = 0.0
+    I_term = 0.0
+    I_max = 2000.0         # integral clamp
+
+    steer_max = 1.0        # normalized command in [-1, 1]
+    steer_cmd = 0.0
+    steer_ema = 0.0
+    steer_alpha = 0.7      # smoothing for steering
+
+    # histories for plotting
+    speed_history = []
+    steer_history = []      # <<< NEW
+    graph_h, graph_w = 200, 400  # pixels of graph window
 
     try:
         while True:
@@ -520,22 +538,88 @@ def main():
             else:
                 speed_ema = v_conf
 
-            # Store for graph
+            # --------- STEERING: PID based on centreline error (<<< NEW) ---------
+            if coeffs_ema is not None:
+                poly_ema = np.poly1d(coeffs_ema)
+
+                # choose row near bottom (close to car)
+                y_ref = int(bev_h * 0.9)
+                x_cl = float(poly_ema(y_ref))     # PV[k] in pixels
+
+                SP = bev_w / 2.0                  # setpoint = image centre
+                e_px = SP - x_cl                  # error in pixels (SP - PV)
+
+                # normalize error to [-1, 1] approx (optional but easier to tune)
+                e = e_px / (bev_w / 2.0)
+            else:
+                e_px = 0.0
+                e = 0.0
+
+            # PID terms
+            P_term = Kp * e
+            I_term += Ki * e * T_s
+            I_term = max(-I_max, min(I_term, I_max))  # clamp integral
+            D_term = Kd * (e - e_prev) / T_s
+            e_prev = e
+
+            u = P_term + I_term + D_term
+
+            # saturate steering
+            if u > steer_max:
+                steer_cmd = steer_max
+            elif u < -steer_max:
+                steer_cmd = -steer_max
+            else:
+                steer_cmd = u
+
+            # smooth steering command with EMA
+            if steer_history:
+                steer_ema = steer_alpha * steer_ema + (1.0 - steer_alpha) * steer_cmd
+            else:
+                steer_ema = steer_cmd
+
+            # TODO: send steer_ema and speed_ema to your car here
+            # Example (if you have a vehicle object):
+            # vehicle.steering = float(steer_ema)
+            # vehicle.throttle = float(speed_ema / 3.0)   # map [0,3] m/s -> [0,1]
+
+            # --------- Store histories for plotting ---------
             speed_history.append(speed_ema)
+            steer_history.append(steer_ema)
             if len(speed_history) > graph_w:
                 speed_history.pop(0)
+            if len(steer_history) > graph_w:
+                steer_history.pop(0)
 
-            # --------- Draw simple speed graph ---------
+            # --------- Draw combined speed + steering graph (<<< NEW) ---------
             graph = np.zeros((graph_h, graph_w, 3), dtype=np.uint8)
-            cv.line(graph, (0, graph_h - 1), (graph_w - 1, graph_h - 1), (255, 255, 255), 1)
-            cv.line(graph, (0, 0), (0, graph_h - 1), (255, 255, 255), 1)
 
-            max_speed_for_graph = 3.0  # same as clip above
-            for i, v in enumerate(speed_history):
+            # axes
+            cv.line(graph, (0, graph_h//2), (graph_w-1, graph_h//2), (255, 255, 255), 1)
+            cv.line(graph, (0, graph_h-1), (graph_w-1, graph_h-1), (255, 255, 255), 1)
+            cv.line(graph, (0, 0), (0, graph_h-1), (255, 255, 255), 1)
+
+            # top half: speed
+            max_speed_for_graph = 3.0
+            for i, v in enumerate(speed_history[-graph_w:]):
                 x = i
-                y = int(graph_h - 1 - (v / max_speed_for_graph) * (graph_h - 10))
-                y = np.clip(y, 0, graph_h - 1)
-                graph[y:, x] = (0, 255, 0)  # vertical green bar
+                y = int((graph_h//2 - 5) - (v / max_speed_for_graph) * (graph_h//2 - 10))
+                y = np.clip(y, 0, graph_h//2 - 1)
+                graph[y:, x] = (0, 255, 0)
+
+            # bottom half: steering [-1,1]
+            for i, s in enumerate(steer_history[-graph_w:]):
+                x = i
+                y_mid = (3 * graph_h) // 4
+                y_range = (graph_h // 2 - 10)
+                y = int(y_mid - s * y_range)
+                y = np.clip(y, graph_h//2, graph_h-1)
+                graph[y:, x] = (255, 0, 0)
+
+            cv.putText(graph, "speed (m/s)", (5, 15),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            cv.putText(graph, "steer (-1..1)", (5, graph_h//2 + 15),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
             # --------- Text overlay on undistorted image ---------
             cv.putText(und_vis, f"v_cmd = {speed_ema:.2f} m/s", (20, 40),
@@ -544,11 +628,15 @@ def main():
                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
             cv.putText(und_vis, f"kappa_max = {kappa_max:.2f} 1/m", (20, 100),
                        cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv.putText(und_vis, f"steer = {steer_ema:.2f}", (20, 130),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv.putText(und_vis, f"e_px = {e_px:.1f}", (20, 160),
+                       cv.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
             # --------- Show windows ---------
-            cv.imshow("Undistorted + Centreline + Speed", und_vis)
+            cv.imshow("Undistorted + Centreline + Speed + Steering", und_vis)
             cv.imshow("Bird View + Centreline", bev_vis)
-            cv.imshow("Speed graph (m/s)", graph)
+            cv.imshow("Speed & Steering history", graph)
 
             key = cv.waitKey(1) & 0xFF
             if key == 27:  # ESC
@@ -557,7 +645,6 @@ def main():
         camera.running = False
         cv.destroyAllWindows()
         print("Stopped camera and closed windows")
-
 
 
 if __name__ == "__main__":
