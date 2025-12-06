@@ -144,38 +144,33 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (x, y)
+    points = []  # (c, r) = (x, y)
 
-    # Only search in a central horizontal band to avoid orange borders
-    roi_center_frac = 0.25        # half-width of ROI as fraction of image width
-    x_center = w_bev / 2.0
-    roi_x_min = int(x_center - roi_center_frac * w_bev)
-    roi_x_max = int(x_center + roi_center_frac * w_bev)
+    # optional: central ROI to ignore walls; keep wide for now
+    roi_x_min = int(w_bev * 0.05)
+    roi_x_max = int(w_bev * 0.95)
 
-    # Reject sudden sideways "jumps" (likely side line or noise)
-    max_jump = 0.15 * w_bev       # 15% of width per row step
-
-    x_prev = x_center
+    # how many white pixels needed in a row to trust it
+    min_white_per_row = 3   # much smaller than before – easier to collect points
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
         row = combined[y, :]
 
         # restrict to central ROI
-        row_roi = row[:, roi_x_min:roi_x_max]
-        xs_roi = np.where(row_roi > 0)[0]
+        row_roi = row[roi_x_min:roi_x_max]
+        xs_roi = np.where(row_roi > 0)[0]  # indices inside ROI
+
         if xs_roi.size < min_white_per_row:
+            # not enough white pixels -> skip this row
             continue
 
+        # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
-        x_mean = float(xs.mean())
 
-        # if we already have a point, reject large sideways jumps
-        if points and abs(x_mean - x_prev) > max_jump:
-            # skip this row, probably wrong branch
-            continue
+        # assignment spec: c = average column index of white pixels
+        c = float(xs.mean())
 
-        points.append((x_mean, float(y)))
-        x_prev = x_mean
+        points.append((c, float(y)))
 
     # visualisation of chosen points
     bev_pts_vis = bev.copy()
@@ -195,19 +190,8 @@ def draw_centreline_from_bev(
     xs = pts[:, 0]
     ys = pts[:, 1]
 
-    # ---------------- Step 6: Polynomial fit x(y), using only lower part ----------------
-    # we care most about rows close to the car → bottom ~40% of BEV
-    y_fit_min = h_bev * 0.6
-    mask = ys >= y_fit_min
-    if mask.sum() >= deg + 1:
-        xs_fit = xs[mask]
-        ys_fit = ys[mask]
-    else:
-        xs_fit = xs
-        ys_fit = ys
-
-    coeffs = np.polyfit(ys_fit, xs_fit, deg)
-
+    # ---------------- Step 6: Polynomial fit x(y) ----------------
+    coeffs = np.polyfit(ys, xs, deg)
     poly = np.poly1d(coeffs)
 
     centreline_bev = []
@@ -482,7 +466,7 @@ def main():
     speed_alpha = 0.8
 
     # ---- PID steering state & parameters (all <<< NEW) ----
-    Kp = 1.0    # start point; you will tune
+    Kp = 0.6    # start point; you will tune
     Ki = 0.0
     Kd = 0.1
 
@@ -494,7 +478,7 @@ def main():
     steer_max = 1.0        # normalized command in [-1, 1]
     steer_cmd = 0.0
     steer_ema = 0.0
-    steer_alpha = 0.4      # smoothing for steering
+    steer_alpha = 0.7      # smoothing for steering
 
     # histories for plotting
     speed_history = []
@@ -564,8 +548,8 @@ def main():
 
             # --------- Safety: scale speed by lane confidence ---------
         # ===============================================
-            v_max_clip = 1.0      # how we clip v_conf, you already found this
-            v_max_physical = 1.0  # used for scaling speed -> throttle
+            v_max_clip = 2.0      # how we clip v_conf, you already found this
+            v_max_physical = 3.0  # used for scaling speed -> throttle
 
             MIN_THROTTLE = 0.12   # experimentally: smallest value where wheels start moving
         # ==============================================
@@ -622,6 +606,7 @@ def main():
 
             # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
            
+            # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
             if confidence < 0.2 or coeffs_ema is None:
                 # lane not reliable → stop and centre steering
                 throttle_cmd = 0.0
