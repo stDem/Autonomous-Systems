@@ -144,7 +144,6 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-        # ---------------- Step 5: Find centreline points (row-wise, robust) ----------------
     points = []  # (x, y)
 
     # Only search in a central horizontal band to avoid orange borders
@@ -153,16 +152,23 @@ def draw_centreline_from_bev(
     roi_x_min = int(x_center - roi_center_frac * w_bev)
     roi_x_max = int(x_center + roi_center_frac * w_bev)
 
+    # clamp ROI to valid range
+    roi_x_min = max(0, roi_x_min)
+    roi_x_max = min(w_bev, roi_x_max)
+    if roi_x_max <= roi_x_min:
+        # something went wrong, bail out
+        return und, bev, None, []
+
     # Reject sudden sideways "jumps" (likely side line or noise)
     max_jump = 0.15 * w_bev       # 15% of width per row step
 
     x_prev = x_center
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
-        row = combined[y, :]
+        row = combined[y, :]          # row shape: (w_bev,)
 
-        # restrict to central ROI
-        row_roi = row[:, roi_x_min:roi_x_max]
+        # restrict to central ROI  (NOTE: 1D slicing, FIXED)
+        row_roi = row[roi_x_min:roi_x_max]
         xs_roi = np.where(row_roi > 0)[0]
         if xs_roi.size < min_white_per_row:
             continue
@@ -623,7 +629,6 @@ def main():
 
             # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
            
-            # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
             if confidence < 0.2 or coeffs_ema is None:
                 # lane not reliable → stop and centre steering
                 throttle_cmd = 0.0
