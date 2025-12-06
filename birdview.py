@@ -144,7 +144,6 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-        # ---------------- Step 5: Find centreline points (row-wise, with ROI & jump filter) ----------------
     points = []  # (x, y)
 
     # Only search in a central horizontal band to avoid orange borders
@@ -153,20 +152,16 @@ def draw_centreline_from_bev(
     roi_x_min = int(x_center - roi_center_frac * w_bev)
     roi_x_max = int(x_center + roi_center_frac * w_bev)
 
-    # clamp ROI just in case
-    roi_x_min = max(0, roi_x_min)
-    roi_x_max = min(w_bev, roi_x_max)
-
     # Reject sudden sideways "jumps" (likely side line or noise)
     max_jump = 0.15 * w_bev       # 15% of width per row step
 
     x_prev = x_center
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
-        row = combined[y, :]          # 1D array, shape (w_bev,)
+        row = combined[y, :]
 
-        # restrict to central ROI  <<< BUGFIX: 1D slice, not row[:, ...]
-        row_roi = row[roi_x_min:roi_x_max]
+        # restrict to central ROI
+        row_roi = row[:, roi_x_min:roi_x_max]
         xs_roi = np.where(row_roi > 0)[0]
         if xs_roi.size < min_white_per_row:
             continue
@@ -200,7 +195,7 @@ def draw_centreline_from_bev(
     xs = pts[:, 0]
     ys = pts[:, 1]
 
-    # ---------------- Step 6: Polynomial fit x(y), using only lower part + weights ----------------
+    # ---------------- Step 6: Polynomial fit x(y), using only lower part ----------------
     # we care most about rows close to the car → bottom ~40% of BEV
     y_fit_min = h_bev * 0.6
     mask = ys >= y_fit_min
@@ -211,20 +206,10 @@ def draw_centreline_from_bev(
         xs_fit = xs
         ys_fit = ys
 
-    # ---- NEW: weights so bottom rows dominate the fit ----
-    y_min = ys_fit.min()
-    y_max = ys_fit.max()
+    coeffs = np.polyfit(ys_fit, xs_fit, deg)
 
-    # normalise y into [0,1]; bottom rows ≈ 1, top rows ≈ 0
-    w = (ys_fit - y_min) / (y_max - y_min + 1e-6)
-    # emphasise bottom rows even more, avoid exact zero
-    w = (w + 1e-3) ** 2
-
-    # weighted polynomial fit: x(y)
-    coeffs = np.polyfit(ys_fit, xs_fit, deg, w=w)
     poly = np.poly1d(coeffs)
 
-    # evaluate polynomial for all rows in the ROI
     centreline_bev = []
     for y in range(h_bev - 1, h_bev // 2, -1):
         x = float(poly(y))
