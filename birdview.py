@@ -440,12 +440,12 @@ def main():
     
     # ---------- 5b) Create JetRacer car (AUTONOMOUS CONTROL) ----------
     car = NvidiaRacecar()
-    car.throttle = 0.0
-    car.steering = 0.0
+    # car.throttle = 0.0
+    # car.steering = 0.0
 
     # set gains like you did in the gamepad example
-    car.throttle_gain = 0.10      # how aggressive throttle is (start small)
-    car.steering_offset = -0.18   # your known offset
+    # car.throttle_gain = 0.10      # how aggressive throttle is (start small)
+    # car.steering_offset = -0.18   # your known offset
     # car.steering_gain  # you can also tune this if needed
 
     input("Place the car on the track and press ENTER to start autonomous mode...")
@@ -688,8 +688,8 @@ def main():
                 break
     finally:
         camera.running = False
-        car.throttle = 0.0    
-        car.steering = 0.0 
+        # car.throttle = 0.0    
+        # car.steering = 0.0 
         cv.destroyAllWindows()
         print("Stopped camera and closed windows")
 
