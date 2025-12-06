@@ -548,8 +548,8 @@ def main():
 
             # --------- Safety: scale speed by lane confidence ---------
         # ===============================================
-            v_max_clip = 1.0      # how we clip v_conf, you already found this
-            v_max_physical = 1.0  # used for scaling speed -> throttle
+            v_max_clip = 0.5      # how we clip v_conf, you already found this
+            v_max_physical = 0.5  # used for scaling speed -> throttle
 
             MIN_THROTTLE = 0.12   # experimentally: smallest value where wheels start moving
         # ==============================================
