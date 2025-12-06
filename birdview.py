@@ -2,6 +2,7 @@ import numpy as np
 import cv2 as cv
 from jetcam.csi_camera import CSICamera
 import time 
+from jetracer.nvidia_racecar import NvidiaRacecar
 
 # ============================================================
 # Centreline extraction + visualization (Steps 1–7)
@@ -316,9 +317,15 @@ def compute_max_speed_from_poly(
 
     return float(v_max), float(kappa_max), float(R_min)
 
-# ============================================================
+
+
+
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# ==============================================================================================
 # Main: Bird's-eye view + live centreline overlay
-# ============================================================
+# ==============================================================================================
 
 def main():
     # ---------- 1) Load calibration ----------
@@ -430,6 +437,19 @@ def main():
 
     H = cv.getPerspectiveTransform(src_pts, dst_pts)
     print("Homography H:\n", H)
+    
+    # ---------- 5b) Create JetRacer car (AUTONOMOUS CONTROL) ----------
+    car = NvidiaRacecar()
+    car.throttle = 0.0
+    car.steering = 0.0
+
+    # set gains like you did in the gamepad example
+    car.throttle_gain = 0.25      # how aggressive throttle is (start small)
+    car.steering_offset = -0.18   # your known offset
+    # car.steering_gain  # you can also tune this if needed
+
+    input("Place the car on the track and press ENTER to start autonomous mode...")
+
 
     # ---------- 6) Live bird’s-eye + centreline + speed + steering ----------
     print("=== LIVE BIRD-VIEW + CENTRELINE + SPEED + STEERING MODE ===")
@@ -578,10 +598,26 @@ def main():
             else:
                 steer_ema = steer_cmd
 
-            # TODO: send steer_ema and speed_ema to your car here
-            # Example (if you have a vehicle object):
-            # vehicle.steering = float(steer_ema)
-            # vehicle.throttle = float(speed_ema / 3.0)   # map [0,3] m/s -> [0,1]
+            # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
+            v_max_physical = 3.0   # this is the same max you used for clipping
+
+            if confidence < 0.3 or coeffs_ema is None:
+                # lane not reliable → stop and centre steering
+                throttle_cmd = 0.0
+                steer_to_send = 0.0
+            else:
+                # simple linear mapping speed -> throttle
+                throttle_cmd = speed_ema / v_max_physical
+                throttle_cmd = max(0.0, min(throttle_cmd, 1.0))
+
+                # steering is already normalized [-1,1] from PID
+                steer_to_send = float(steer_ema)
+                steer_to_send = max(-1.0, min(steer_to_send, 1.0))
+
+            # send to JetRacer (car.throttle_gain scales internally)
+            car.throttle = float(throttle_cmd)
+            car.steering = float(steer_to_send)
+
 
             # --------- Store histories for plotting ---------
             speed_history.append(speed_ema)
@@ -643,6 +679,8 @@ def main():
                 break
     finally:
         camera.running = False
+        car.throttle = 0.0    
+        car.steering = 0.0 
         cv.destroyAllWindows()
         print("Stopped camera and closed windows")
 
