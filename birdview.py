@@ -444,12 +444,11 @@ def main():
     car.steering = 0.0
 
     # set gains like you did in the gamepad example
-    car.throttle_gain = 0.25      # how aggressive throttle is (start small)
+    car.throttle_gain = 0.10      # how aggressive throttle is (start small)
     car.steering_offset = -0.18   # your known offset
     # car.steering_gain  # you can also tune this if needed
 
     input("Place the car on the track and press ENTER to start autonomous mode...")
-
 
     # ---------- 6) Live bird’s-eye + centreline + speed + steering ----------
     print("=== LIVE BIRD-VIEW + CENTRELINE + SPEED + STEERING MODE ===")
@@ -606,7 +605,6 @@ def main():
 
             # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
            
-            # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
             if confidence < 0.2 or coeffs_ema is None:
                 # lane not reliable → stop and centre steering
                 throttle_cmd = 0.0
