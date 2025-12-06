@@ -466,7 +466,7 @@ def main():
     speed_alpha = 0.8
 
     # ---- PID steering state & parameters (all <<< NEW) ----
-    Kp = 0.6    # start point; you will tune
+    Kp = 1.0    # start point; you will tune
     Ki = 0.0
     Kd = 0.1
 
@@ -478,7 +478,7 @@ def main():
     steer_max = 1.0        # normalized command in [-1, 1]
     steer_cmd = 0.0
     steer_ema = 0.0
-    steer_alpha = 0.7      # smoothing for steering
+    steer_alpha = 0.4      # smoothing for steering
 
     # histories for plotting
     speed_history = []
