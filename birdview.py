@@ -444,7 +444,7 @@ def main():
     car.steering = 0.0
 
     # set gains like you did in the gamepad example
-    car.throttle_gain = 0.10      # how aggressive throttle is (start small)
+    car.throttle_gain = 0.25      # how aggressive throttle is (start small)
     car.steering_offset = -0.18   # your known offset
     # car.steering_gain  # you can also tune this if needed
 
@@ -599,7 +599,7 @@ def main():
                 steer_ema = steer_cmd
 
             # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
-            v_max_physical = 0.6   # this is the same max you used for clipping
+            v_max_physical = 3.0   # this is the same max you used for clipping
 
             if confidence < 0.3 or coeffs_ema is None:
                 # lane not reliable → stop and centre steering
