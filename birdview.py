@@ -547,10 +547,16 @@ def main():
                 v_max, kappa_max, R_min = 0.0, 0.0, float("inf")
 
             # --------- Safety: scale speed by lane confidence ---------
+        # ===============================================
+            v_max_clip = 2.0      # how we clip v_conf, you already found this
+            v_max_physical = 3.0  # used for scaling speed -> throttle
+
+            MIN_THROTTLE = 0.12   # experimentally: smallest value where wheels start moving
+        # ==============================================
             v_conf = v_max * confidence
 
             # Clip speed to a reasonable range for your car
-            v_conf = max(0.0, min(v_conf, 2.0))  # [m/s], tune 3.0 as your top speed
+            v_conf = max(0.0, min(v_conf, v_max_clip))   # [m/s], tune 3.0 as your top speed
 
             # --------- Smooth speed (momentum term) ---------
             if speed_history:
@@ -599,24 +605,29 @@ def main():
                 steer_ema = steer_cmd
 
             # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
-            v_max_physical = 3.0   # this is the same max you used for clipping
-
-            if confidence < 0.3 or coeffs_ema is None:
+           
+            # --------- Convert speed_ema (m/s) → throttle [0,1] and send commands ---------
+            if confidence < 0.2 or coeffs_ema is None:
                 # lane not reliable → stop and centre steering
                 throttle_cmd = 0.0
                 steer_to_send = 0.0
             else:
                 # simple linear mapping speed -> throttle
                 throttle_cmd = speed_ema / v_max_physical
-                throttle_cmd = max(0.0, min(throttle_cmd, 1.0))
+
+                # ensure we overcome motor dead-zone if we *want* to move
+                if throttle_cmd > 0.0:
+                    throttle_cmd = max(throttle_cmd, MIN_THROTTLE)
+
+                throttle_cmd = min(throttle_cmd, 1.0)
 
                 # steering is already normalized [-1,1] from PID
                 steer_to_send = float(steer_ema)
                 steer_to_send = max(-1.0, min(steer_to_send, 1.0))
 
-            # send to JetRacer (car.throttle_gain scales internally)
             car.throttle = float(throttle_cmd)
             car.steering = float(steer_to_send)
+
 
 
             # --------- Store histories for plotting ---------
