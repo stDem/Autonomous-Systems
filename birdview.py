@@ -198,23 +198,24 @@ def draw_centreline_from_bev(
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
     xs_std = np.std(xs)
-    straight_thresh = 10.0  # tune this
+    straight_thresh = 10.0  # pixels; tune this
 
-    # case 1: straight → fit degree 1
+    # adaptive degree, but always return deg=2 coeffs
     if xs_std < straight_thresh:
+        # straight -> degree 1, then embed into deg=2
         m, b = np.polyfit(ys, xs, 1)
-        # convert to deg=2 (no curvature)
         coeffs = np.array([0.0, m, b], dtype=np.float32)
-
-    # case 2: curve → fit degree 2
     else:
         coeffs = np.polyfit(ys, xs, 2).astype(np.float32)
 
     poly = np.poly1d(coeffs)
 
-    # draw line
+    # ----- NEW: draw only between y_min and y_max of real data -----
+    y_min = int(ys.min())
+    y_max = int(ys.max())
+
     centreline_bev = []
-    for y in range(h_bev - 1, h_bev // 2, -1):
+    for y in range(y_max, y_min - 1, -1):
         x = float(poly(y))
         if 0 <= x < w_bev:
             centreline_bev.append((x, float(y)))
@@ -578,18 +579,22 @@ def main():
                 speed_ema = v_conf
 
             # --------- STEERING: PID based on centreline error (<<< NEW) ---------
-            if coeffs_ema is not None:
+            if coeffs_ema is not None and points:
                 poly_ema = np.poly1d(coeffs_ema)
 
-                # choose row near bottom (close to car)
-                y_ref = int(bev_h * 0.9)
-                x_cl = float(poly_ema(y_ref))     # PV[k] in pixels
+                ys_pts = np.array([p[1] for p in points])
+                y_min_pts = ys_pts.min()
+                y_max_pts = ys_pts.max()
 
-                SP = bev_w / 2.0                  # setpoint = image centre
-                e_px = SP - x_cl                  # error in pixels (SP - PV)
+                # choose reference row a bit above the nearest part, inside [y_min, y_max]
+                # e.g. 20% up from the bottom of the visible line
+                y_ref = int(y_max_pts - 0.2 * (y_max_pts - y_min_pts))
 
-                # normalize error to [-1, 1] approx (optional but easier to tune)
-                e = e_px / (bev_w / 2.0)
+                x_cl = float(poly_ema(y_ref))  # PV[k] in pixels
+
+                SP = bev_w / 2.0               # setpoint = image centre
+                e_px = SP - x_cl               # error in pixels
+                e = e_px / (bev_w / 2.0)       # normalised error
             else:
                 e_px = 0.0
                 e = 0.0
