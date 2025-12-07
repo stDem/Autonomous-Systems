@@ -197,23 +197,22 @@ def draw_centreline_from_bev(
     ys = pts[:, 1]
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
-        # ---------------- Step 6: Polynomial fit x(y), adaptive degree ----------------
-    # xs, ys come from Step 5 and cover the entire visible dash region
-
-    # if the line is almost vertical (straight), don't force a parabola
     xs_std = np.std(xs)
-    straight_thresh = 10.0   # pixels; tune this
+    straight_thresh = 10.0  # tune this
 
+    # case 1: straight → fit degree 1
     if xs_std < straight_thresh:
-        fit_deg = 1      # basically straight → line
-    else:
-        fit_deg = deg    # e.g. 2 for curves
+        m, b = np.polyfit(ys, xs, 1)
+        # convert to deg=2 (no curvature)
+        coeffs = np.array([0.0, m, b], dtype=np.float32)
 
-    # ordinary least-squares polyfit on all points
-    coeffs = np.polyfit(ys, xs, fit_deg)
+    # case 2: curve → fit degree 2
+    else:
+        coeffs = np.polyfit(ys, xs, 2).astype(np.float32)
+
     poly = np.poly1d(coeffs)
 
-    # evaluate over the *same* y-range we used for scanning
+    # draw line
     centreline_bev = []
     for y in range(h_bev - 1, h_bev // 2, -1):
         x = float(poly(y))
