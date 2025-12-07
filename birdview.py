@@ -15,7 +15,7 @@ def draw_centreline_from_bev(
     src_pts,
     deg=2,
     stride=4,
-    min_white_per_row=10,
+    min_white_per_row=3,
     debug=False,
     save_debug_prefix=None,
 ):
@@ -191,11 +191,42 @@ def draw_centreline_from_bev(
     ys = pts[:, 1]
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
-    coeffs = np.polyfit(ys, xs, deg)
+    # Use ALL points we have (xs, ys) – the dashed pattern may only appear higher up.
+    xs_fit = xs
+    ys_fit = ys
+
+    if len(xs_fit) < deg + 1:
+        # not enough points to fit requested degree
+        return und, bev, None, points
+
+    # ---- Distance-based weights: bottom rows more important, but top still used ----
+    y_min = ys_fit.min()
+    y_max = ys_fit.max()
+    if y_max - y_min < 1e-6:
+        # degenerate case
+        return und, bev, None, points
+
+    # normalise y into [0,1]; bottom rows ≈ 1, top ≈ 0
+    w = (ys_fit - y_min) / (y_max - y_min)
+    w = (w + 1e-3) ** 2      # avoid zero, emphasise bottom
+
+    # ---- If the line is almost straight, don't force a parabola ----
+    xs_std = np.std(xs_fit)
+    straight_thresh = 5.0    # pixels; tune if needed
+
+    if xs_std < straight_thresh:
+        fit_deg = 1   # basically straight, use line
+    else:
+        fit_deg = deg  # e.g. 2 for curves
+
+    coeffs = np.polyfit(ys_fit, xs_fit, fit_deg, w=w)
     poly = np.poly1d(coeffs)
 
+    # ---- Evaluate polynomial only where we actually have data (no crazy extrapolation) ----
     centreline_bev = []
-    for y in range(h_bev - 1, h_bev // 2, -1):
+    y_start = int(y_min)
+    y_end   = int(y_max)
+    for y in range(y_end, y_start - 1, -1):
         x = float(poly(y))
         if 0 <= x < w_bev:
             centreline_bev.append((x, float(y)))
@@ -203,11 +234,6 @@ def draw_centreline_from_bev(
     bev_with_line = bev.copy()
     for (x, y) in centreline_bev:
         cv.circle(bev_with_line, (int(x), int(y)), 1, (255, 0, 0), -1)
-
-    # if debug:
-    #     cv.imshow("step6_poly_bev", bev_with_line)
-    # if save_debug_prefix is not None:
-    #     cv.imwrite(f"{save_debug_prefix}_step6_poly_bev.png", bev_with_line)
 
     # ---------------- Step 7: Project centreline back to original ----------------
     H_inv = np.linalg.inv(H)
@@ -499,7 +525,7 @@ def main():
                     und, bev, H, src_pts,
                     deg=2,
                     stride=4,
-                    min_white_per_row=20,
+                    min_white_per_row=3,
                     debug=True,
                     save_debug_prefix="debug_bev"
                 )
@@ -508,7 +534,7 @@ def main():
                     und, bev, H, src_pts,
                     deg=2,
                     stride=4,
-                    min_white_per_row=20,
+                    min_white_per_row=3,
                     debug=False,
                     save_debug_prefix=None
                 )
