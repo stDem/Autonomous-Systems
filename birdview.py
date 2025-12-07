@@ -144,35 +144,41 @@ def draw_centreline_from_bev(
         cv.imwrite(f"{save_debug_prefix}_step4_combined_mask.png", combined)
 
     # ---------------- Step 5: Find centreline points (row-wise) ----------------
-    points = []  # (c, r) = (x, y)
+    points = []  # (x, y)
 
-    # optional: central ROI to ignore walls; keep wide for now
-    roi_x_min = int(w_bev * 0.05)
-    roi_x_max = int(w_bev * 0.95)
+    # central horizontal band to avoid orange borders
+    roi_center_frac = 0.25        # half-width of ROI as fraction of image width
+    x_center = w_bev / 2.0
+    roi_x_min = int(x_center - roi_center_frac * w_bev)
+    roi_x_max = int(x_center + roi_center_frac * w_bev)
 
-    # how many white pixels needed in a row to trust it
-    min_white_per_row = 3   # much smaller than before – easier to collect points
+    roi_x_min = max(0, roi_x_min)
+    roi_x_max = min(w_bev, roi_x_max)
+
+    x_prev = x_center
+    max_jump = 0.15 * w_bev       # can keep or even remove later
 
     for y in range(h_bev - 1, h_bev // 2, -stride):
-        row = combined[y, :]
+        row = combined[y, :]                  # 1D: (w_bev,)
 
-        # restrict to central ROI
+        # restrict to central ROI  <<< IMPORTANT: 1D slice
         row_roi = row[roi_x_min:roi_x_max]
-        xs_roi = np.where(row_roi > 0)[0]  # indices inside ROI
+        xs_roi = np.where(row_roi > 0)[0]
 
+        # dash segments can be thin → keep threshold small
         if xs_roi.size < min_white_per_row:
-            # not enough white pixels -> skip this row
             continue
 
-        # convert ROI indices to full-image x positions
         xs = xs_roi + roi_x_min
+        x_mean = float(xs.mean())
 
-        # assignment spec: c = average column index of white pixels
-        c = float(xs.mean())
+        # (optional) reject huge jumps to the side
+        if points and abs(x_mean - x_prev) > max_jump:
+            continue
 
-        points.append((c, float(y)))
+        points.append((x_mean, float(y)))
+        x_prev = x_mean
 
-    # visualisation of chosen points
     bev_pts_vis = bev.copy()
     for (x, y) in points:
         cv.circle(bev_pts_vis, (int(x), int(y)), 3, (0, 0, 255), -1)
@@ -191,42 +197,25 @@ def draw_centreline_from_bev(
     ys = pts[:, 1]
 
     # ---------------- Step 6: Polynomial fit x(y) ----------------
-    # Use ALL points we have (xs, ys) – the dashed pattern may only appear higher up.
-    xs_fit = xs
-    ys_fit = ys
+        # ---------------- Step 6: Polynomial fit x(y), adaptive degree ----------------
+    # xs, ys come from Step 5 and cover the entire visible dash region
 
-    if len(xs_fit) < deg + 1:
-        # not enough points to fit requested degree
-        return und, bev, None, points
-
-    # ---- Distance-based weights: bottom rows more important, but top still used ----
-    y_min = ys_fit.min()
-    y_max = ys_fit.max()
-    if y_max - y_min < 1e-6:
-        # degenerate case
-        return und, bev, None, points
-
-    # normalise y into [0,1]; bottom rows ≈ 1, top ≈ 0
-    w = (ys_fit - y_min) / (y_max - y_min)
-    w = (w + 1e-3) ** 2      # avoid zero, emphasise bottom
-
-    # ---- If the line is almost straight, don't force a parabola ----
-    xs_std = np.std(xs_fit)
-    straight_thresh = 5.0    # pixels; tune if needed
+    # if the line is almost vertical (straight), don't force a parabola
+    xs_std = np.std(xs)
+    straight_thresh = 10.0   # pixels; tune this
 
     if xs_std < straight_thresh:
-        fit_deg = 1   # basically straight, use line
+        fit_deg = 1      # basically straight → line
     else:
-        fit_deg = deg  # e.g. 2 for curves
+        fit_deg = deg    # e.g. 2 for curves
 
-    coeffs = np.polyfit(ys_fit, xs_fit, fit_deg, w=w)
+    # ordinary least-squares polyfit on all points
+    coeffs = np.polyfit(ys, xs, fit_deg)
     poly = np.poly1d(coeffs)
 
-    # ---- Evaluate polynomial only where we actually have data (no crazy extrapolation) ----
+    # evaluate over the *same* y-range we used for scanning
     centreline_bev = []
-    y_start = int(y_min)
-    y_end   = int(y_max)
-    for y in range(y_end, y_start - 1, -1):
+    for y in range(h_bev - 1, h_bev // 2, -1):
         x = float(poly(y))
         if 0 <= x < w_bev:
             centreline_bev.append((x, float(y)))
