@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""
+JetRacer Pro – Gamepad teleop + data collection with VISUAL cropping
+
+Features:
+- Teleoperate JetRacer with a gamepad.
+- At startup: show one camera frame, let you draw an ROI with the mouse.
+- Save CROPPED images + steering + throttle + timestamp.
+- One folder per session for easy cleanup.
+
+Controls:
+    Left stick horizontal (ABS_X)  -> steering
+    Right stick vertical  (ABS_RY) -> throttle (forward)
+    A / Cross (BTN_SOUTH)          -> toggle recording
+    B / Circle (BTN_EAST)          -> quit
+
+Run (over SSH with XQuartz):
+    ssh -Y jetson@<JETSON_IP>
+    python3 collect_data_visual_crop.py --data-root ./data --session-name run1
+"""
+
+import os
+import csv
+import time
+import math
+import argparse
+from datetime import datetime
+from threading import Thread, Lock
+
+import cv2
+from inputs import get_gamepad
+
+from jetcam.csi_camera import CSICamera
+from jetracer.nvidia_racecar import NvidiaRacecar
+
+
+# ----------------------------
+# CONFIG DEFAULTS
+# ----------------------------
+
+# Safety: cap throttle
+MAX_THROTTLE = 0.30
+
+# Save at ~10 FPS while recording
+DEFAULT_SAVE_INTERVAL = 0.10
+
+# Gamepad axis range (common)
+AXIS_MAX_ABS = 32767.0
+
+
+# ----------------------------
+# STATE
+# ----------------------------
+
+class TeleopState:
+    def __init__(self):
+        self.steering = 0.0
+        self.throttle = 0.0
+        self.recording = False
+        self.running = True
+        self._lock = Lock()
+
+    def set_steering(self, value: float):
+        with self._lock:
+            self.steering = value
+
+    def set_throttle(self, value: float):
+        with self._lock:
+            self.throttle = value
+
+    def toggle_recording(self):
+        with self._lock:
+            self.recording = not self.recording
+            print(f"[INFO] Recording = {self.recording}")
+
+    def stop(self):
+        with self._lock:
+            self.running = False
+
+    def snapshot(self):
+        with self._lock:
+            return self.steering, self.throttle, self.recording, self.running
+
+
+# ----------------------------
+# GAMEPAD UTILITIES
+# ----------------------------
+
+def axis_to_unit(state: int) -> float:
+    """Map raw gamepad axis value to [-1, 1]."""
+    return max(-1.0, min(1.0, state / AXIS_MAX_ABS))
+
+
+def steering_transform(raw: float) -> float:
+    """
+    Map raw axis [-1, 1] to steering [-1, 1] with deadzone + non-linear curve
+    for more fine control near center.
+    """
+    x = raw  # flip sign here if left/right feels inverted
+
+    deadzone = 0.05
+    if abs(x) < deadzone:
+        return 0.0
+
+    if x > 0:
+        x = (x - deadzone) / (1.0 - deadzone)
+    else:
+        x = (x + deadzone) / (1.0 - deadzone)
+
+    x = math.copysign(x * x, x)
+    return max(-1.0, min(1.0, x))
+
+
+def throttle_transform(raw: float) -> float:
+    """
+    Map raw axis [-1, 1] to throttle [0, MAX_THROTTLE] (forward only).
+    If you want reverse as well, you can adapt this to [-MAX, MAX].
+    """
+    # For many controllers, pushing stick forward yields negative values
+    y = -raw  # flip sign if you prefer opposite
+
+    deadzone = 0.05
+    if y < deadzone:
+        return 0.0
+    else:
+        y = (y - deadzone) / (1.0 - deadzone)
+
+    y = max(0.0, min(1.0, y))
+    return y * MAX_THROTTLE
+
+
+def gamepad_loop(state: TeleopState):
+    """Background loop reading the gamepad and updating TeleopState."""
+    print("[INFO] Gamepad loop started")
+    print("[INFO] BTN_SOUTH (A) -> toggle recording, BTN_EAST (B) -> quit")
+
+    while True:
+        _, _, _, running = state.snapshot()
+        if not running:
+            print("[INFO] Gamepad loop exiting")
+            break
+
+        events = get_gamepad()
+        for e in events:
+            # Uncomment for debugging codes:
+            # print(e.ev_type, e.code, e.state)
+
+            if e.ev_type == "Absolute" and e.code == "ABS_X":
+                raw = axis_to_unit(e.state)
+                state.set_steering(steering_transform(raw))
+
+            elif e.ev_type == "Absolute" and e.code == "ABS_RY":
+                raw = axis_to_unit(e.state)
+                state.set_throttle(throttle_transform(raw))
+
+            elif e.ev_type == "Key" and e.code == "BTN_SOUTH" and e.state == 1:
+                state.toggle_recording()
+
+            elif e.ev_type == "Key" and e.code == "BTN_EAST" and e.state == 1:
+                print("[INFO] Exit button pressed")
+                state.stop()
+                return
+
+
+# ----------------------------
+# FILE / CSV HELPERS
+# ----------------------------
+
+def create_session_folder(root: str, session_name=None):
+    os.makedirs(root, exist_ok=True)
+    if session_name is None:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_name = f"session_{ts}"
+    session_path = os.path.join(root, session_name)
+    images_path = os.path.join(session_path, "images")
+    os.makedirs(images_path, exist_ok=True)
+    csv_path = os.path.join(session_path, "labels.csv")
+    return session_path, images_path, csv_path
+
+
+def open_csv_writer(csv_path: str):
+    csv_file = open(csv_path, mode="w", newline="")
+    writer = csv.writer(csv_file)
+    writer.writerow(["frame_id", "filename", "steering", "throttle", "timestamp"])
+    csv_file.flush()
+    return csv_file, writer
+
+
+# ----------------------------
+# VISUAL CROPPING
+# ----------------------------
+
+def select_roi_from_camera(camera: CSICamera):
+    """
+    Grab a frame, open a window, and let the user draw an ROI.
+    Returns (crop_top, crop_bottom, crop_left, crop_right) in pixels.
+    """
+    print("[INFO] Grabbing a frame for ROI selection...")
+    time.sleep(0.5)  # allow camera to warm up
+
+    frame = camera.read()
+    if frame is None:
+        raise RuntimeError("Camera returned None frame; cannot do ROI selection.")
+
+    h, w, _ = frame.shape
+    win_name = "Select ROI (drag rectangle, ENTER to confirm)"
+    cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
+    cv2.imshow(win_name, frame)
+
+    print("[INFO] A window should appear on your Mac via XQuartz.")
+    print("[INFO] Use mouse to drag a rectangle over the MAP area.")
+    print("[INFO] Press ENTER or SPACE to confirm, or ESC to cancel.")
+
+    roi = cv2.selectROI(win_name, frame, fromCenter=False, showCrosshair=True)
+    cv2.destroyWindow(win_name)
+
+    x, y, rw, rh = roi
+    if rw == 0 or rh == 0:
+        print("[WARN] No ROI selected; using full frame.")
+        return 0, 0, 0, 0
+
+    # Convert ROI (x, y, width, height) to crop margins
+    crop_top = y
+    crop_left = x
+    crop_bottom = h - (y + rh)
+    crop_right = w - (x + rw)
+
+    print(f"[INFO] Selected ROI: x={x}, y={y}, w={rw}, h={rh}")
+    print(f"[INFO] Crop margins: top={crop_top}, bottom={crop_bottom}, "
+          f"left={crop_left}, right={crop_right}")
+
+    return crop_top, crop_bottom, crop_left, crop_right
+
+
+def crop_image(img, top, bottom, left, right):
+    h, w, _ = img.shape
+
+    y1 = max(0, top)
+    y2 = h - max(0, bottom)
+    x1 = max(0, left)
+    x2 = w - max(0, right)
+
+    if y1 >= y2 or x1 >= x2:
+        return img
+
+    return img[y1:y2, x1:x2]
+
+
+# ----------------------------
+# MAIN LOOP
+# ----------------------------
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-root", type=str, default="./data",
+                        help="Root folder where sessions will be stored")
+    parser.add_argument("--session-name", type=str, default=None,
+                        help="Optional session name (default: timestamp-based)")
+    parser.add_argument("--save-interval", type=float, default=DEFAULT_SAVE_INTERVAL,
+                        help="Seconds between saved frames while recording")
+    args = parser.parse_args()
+
+    # Prepare session folders
+    session_path, images_path, csv_path = create_session_folder(
+        args.data_root, args.session_name
+    )
+    csv_file, csv_writer = open_csv_writer(csv_path)
+
+    print(f"[INFO] Session folder: {session_path}")
+    print(f"[INFO] Images -> {images_path}")
+    print(f"[INFO] Labels -> {csv_path}")
+
+    # Init car
+    car = NvidiaRacecar()
+    car.steering = 0.0
+    car.throttle = 0.0
+    car.steering_gain = 1.0
+    car.throttle_gain = 1.0
+
+    # Init camera
+    camera = CSICamera(width=224, height=224,
+                       capture_width=1280, capture_height=720,
+                       capture_fps=30)
+    camera.running = True
+
+    # VISUAL ROI selection
+    crop_top, crop_bottom, crop_left, crop_right = select_roi_from_camera(camera)
+
+    # Start gamepad thread
+    state = TeleopState()
+    gp_thread = Thread(target=gamepad_loop, args=(state,), daemon=True)
+    gp_thread.start()
+
+    frame_id = 0
+    last_save_time = 0.0
+
+    print("[INFO] Main loop started.")
+    print("[INFO] Drive with gamepad. Press A/Cross to toggle recording.")
+
+    try:
+        while True:
+            steering, throttle, recording, running = state.snapshot()
+            if not running:
+                print("[INFO] Main loop exiting...")
+                break
+
+            # Apply commands to car
+            car.steering = steering
+            car.throttle = throttle
+
+            # Read frame
+            frame = camera.read()
+            if frame is None:
+                print("[WARN] Camera frame is None")
+                time.sleep(0.01)
+                continue
+
+            # Crop according to selected ROI
+            frame_cropped = crop_image(
+                frame, crop_top, crop_bottom, crop_left, crop_right
+            )
+
+            # Save if recording
+            now = time.time()
+            if recording and (now - last_save_time) >= args.save_interval:
+                frame_id += 1
+                filename = f"frame_{frame_id:06d}.jpg"
+                filepath = os.path.join(images_path, filename)
+
+                cv2.imwrite(filepath, frame_cropped)
+
+                csv_writer.writerow([
+                    frame_id,
+                    filename,
+                    float(steering),
+                    float(throttle),
+                    now,
+                ])
+                csv_file.flush()
+
+                last_save_time = now
+
+                print(f"[SAVE] {filename} | steering={steering:.3f} "
+                      f"throttle={throttle:.3f}")
+
+            time.sleep(0.01)
+
+    except KeyboardInterrupt:
+        print("[INFO] KeyboardInterrupt, stopping...")
+
+    finally:
+        state.stop()
+        car.throttle = 0.0
+        car.steering = 0.0
+        camera.running = False
+        csv_file.close()
+        print("[INFO] Shutdown complete")
+
+
+if __name__ == "__main__":
+    main()
