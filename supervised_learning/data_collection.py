@@ -169,10 +169,6 @@ def gamepad_loop(state: TeleopState):
                     if v < 30:   # threshold, adjust if you like
                         state.set_steering(0.0)
 
-                # --- THROTTLE: right stick vertical, ABS_RZ (0..255) ---
-                elif e.code == "ABS_RZ":
-                    v = float(e.state)
-
                 # --- THROTTLE: right stick vertical on ABS_RZ (0..255) ---
                 elif e.code == "ABS_RZ":
                     v = float(e.state)  # 0..255 from your debug
