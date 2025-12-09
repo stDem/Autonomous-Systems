@@ -40,7 +40,7 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # CONFIG DEFAULTS
 # ----------------------------
 
-MAX_THROTTLE = 0.2              # safety cap
+MAX_THROTTLE = 0.1              # safety cap
 DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
 AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
 
@@ -127,7 +127,6 @@ def throttle_transform(raw: float) -> float:
 
 
 def gamepad_loop(state: TeleopState):
-    """Background thread that reads the gamepad and updates TeleopState."""
     print("[INFO] Gamepad loop started")
     print("[INFO] BTN_SOUTH (A/Cross) -> toggle recording, BTN_EAST (B/Circle) -> quit")
 
@@ -140,36 +139,41 @@ def gamepad_loop(state: TeleopState):
         try:
             events = get_gamepad()
         except UnpluggedError:
-            print("[WARN] No gamepad found on Jetson. "
-                  "Is it plugged in / paired to the Jetson?")
+            print("[WARN] No gamepad found on Jetson. Is it plugged in / paired?")
             time.sleep(2.0)
             continue
 
         for e in events:
-            # Debug: uncomment if you want to see all events
+            # Uncomment to debug if needed:
             # print(e.ev_type, e.code, e.state)
 
+            # Analog axes
             if e.ev_type == "Absolute":
-                # Left stick horizontal for steering (as in your notebook)
+
+                # Steering: left stick horizontal (likely ABS_X)
                 if e.code == "ABS_X":
-                    raw = axis_to_unit(e.state)
+                    raw = axis_to_unit(e.state)    # -1..1
                     state.set_steering(steering_transform(raw))
 
-                # Right stick vertical *or* right trigger as throttle
-                elif e.code == "ABS_RY":
-                    raw = axis_to_unit(e.state)
-                    state.set_throttle(throttle_transform(raw))
+                # Throttle: right stick vertical on ABS_RZ (0..255)
+                elif e.code == "ABS_RZ":
+                    v = e.state  # 0..255 from your debug
 
-                # Many pads use ABS_RZ or ABS_Z for right trigger
-                elif e.code in ("ABS_RZ", "ABS_Z"):
-                    # Triggers are often 0..255, so map that to [0, MAX_THROTTLE]
-                    v = e.state
-                    # safety clamp, just in case
-                    v = max(0, min(255, v))
-                    norm = v / 255.0  # 0..1
+                    # Normalize so:
+                    #   up   (v ~ 0)   -> norm ~ 1.0 (max forward)
+                    #   center (127)   -> norm ~ 0.0 (no throttle)
+                    #   down (v ~255)  -> norm < 0 (we clip to 0)
+                    norm = (127.0 - float(v)) / 127.0   # roughly in [-1, 1]
+
+                    if norm < 0.0:
+                        norm = 0.0      # no reverse for now, safe
+                    if norm > 1.0:
+                        norm = 1.0
+
                     throttle = norm * MAX_THROTTLE
                     state.set_throttle(throttle)
 
+            # Buttons
             elif e.ev_type == "Key":
                 if e.code == "BTN_SOUTH" and e.state == 1:
                     state.toggle_recording()
