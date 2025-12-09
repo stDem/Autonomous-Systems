@@ -165,9 +165,9 @@ def gamepad_loop(state: TeleopState):
                 elif e.code == "ABS_RZ":
                     v = float(e.state)  # 0..255 from your debug
 
-                    # up (v≈0) -> norm≈1 (max forward)
-                    # center (127) -> norm≈0
-                    # down (255) -> norm<0 (clipped to 0)
+                    # up (v≈0)   -> norm≈1 (max forward)
+                    # center(127)-> norm≈0
+                    # down(255)  -> norm<0 (we clip to 0, no reverse)
                     norm = (127.0 - v) / 127.0
 
                     if norm < 0.0:
@@ -175,7 +175,13 @@ def gamepad_loop(state: TeleopState):
                     if norm > 1.0:
                         norm = 1.0
 
+                    # scale by MAX_THROTTLE, but clamp to servo's [-1, 1]
                     throttle = norm * MAX_THROTTLE
+                    if throttle > 1.0:
+                        throttle = 1.0
+                    if throttle < -1.0:
+                        throttle = -1.0
+
                     state.set_throttle(throttle)
 
             elif e.ev_type == "Key":
@@ -347,10 +353,13 @@ def main():
             if not running:
                 print("[INFO] Main loop exiting...")
                 break
-
+            # extra safety: clamp before sending to hardware
+            steering_cmd = max(-1.0, min(1.0, steering))
+            throttle_cmd = max(-1.0, min(1.0, throttle))
+            
             # Apply commands to car
-            car.steering = steering
-            car.throttle = throttle
+            car.steering = steering_cmd
+            car.throttle = throttle_cmd
 
             # Get latest frame from jetcam
             frame = camera.value
