@@ -28,6 +28,7 @@ import math
 import argparse
 from datetime import datetime
 from threading import Thread, Lock
+from inputs import get_gamepad, UnpluggedError
 
 import cv2
 from inputs import get_gamepad
@@ -127,7 +128,6 @@ def throttle_transform(raw: float) -> float:
 
 
 def gamepad_loop(state: TeleopState):
-    """Background thread that reads the gamepad and updates TeleopState."""
     print("[INFO] Gamepad loop started")
     print("[INFO] BTN_SOUTH (A/Cross) -> toggle recording, BTN_EAST (B/Circle) -> quit")
 
@@ -137,7 +137,14 @@ def gamepad_loop(state: TeleopState):
             print("[INFO] Gamepad loop exiting")
             break
 
-        events = get_gamepad()
+        try:
+            events = get_gamepad()
+        except UnpluggedError:
+            print("[WARN] No gamepad found on Jetson. "
+                  "Is it plugged in / paired to the Jetson?")
+            time.sleep(2.0)
+            continue
+
         for e in events:
             # Debug mapping if needed:
             # print(e.ev_type, e.code, e.state)
@@ -187,13 +194,21 @@ def open_csv_writer(csv_path: str):
 # VISUAL ROI (CROPPING)
 # ----------------------------
 
-def wait_for_first_frame(camera: CSICamera, timeout=5.0):
-    """Wait until camera.value is not None or timeout."""
+def wait_for_first_frame(camera, warmup_frames=20, timeout=5.0):
+    """
+    Wait until we have a few valid frames from camera.value.
+    This helps avoid the noisy first buffer you saw.
+    """
     start = time.time()
+    count = 0
     frame = camera.value
-    while frame is None and (time.time() - start) < timeout:
-        time.sleep(0.1)
+    while (time.time() - start) < timeout:
         frame = camera.value
+        if frame is not None:
+            count += 1
+            if count >= warmup_frames:
+                return frame
+        time.sleep(0.05)
     return frame
 
 
