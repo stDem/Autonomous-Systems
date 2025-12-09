@@ -31,7 +31,6 @@ from threading import Thread, Lock
 from inputs import get_gamepad, UnpluggedError
 
 import cv2
-from inputs import get_gamepad
 
 from jetcam.csi_camera import CSICamera
 from jetracer.nvidia_racecar import NvidiaRacecar
@@ -128,6 +127,7 @@ def throttle_transform(raw: float) -> float:
 
 
 def gamepad_loop(state: TeleopState):
+    """Background thread that reads the gamepad and updates TeleopState."""
     print("[INFO] Gamepad loop started")
     print("[INFO] BTN_SOUTH (A/Cross) -> toggle recording, BTN_EAST (B/Circle) -> quit")
 
@@ -146,25 +146,37 @@ def gamepad_loop(state: TeleopState):
             continue
 
         for e in events:
-            # Debug mapping if needed:
+            # Debug: uncomment if you want to see all events
             # print(e.ev_type, e.code, e.state)
 
-            if e.ev_type == "Absolute" and e.code == "ABS_X":
-                raw = axis_to_unit(e.state)
-                state.set_steering(steering_transform(raw))
+            if e.ev_type == "Absolute":
+                # Left stick horizontal for steering (as in your notebook)
+                if e.code == "ABS_X":
+                    raw = axis_to_unit(e.state)
+                    state.set_steering(steering_transform(raw))
 
-            elif e.ev_type == "Absolute" and e.code == "ABS_RY":
-                raw = axis_to_unit(e.state)
-                state.set_throttle(throttle_transform(raw))
+                # Right stick vertical *or* right trigger as throttle
+                elif e.code == "ABS_RY":
+                    raw = axis_to_unit(e.state)
+                    state.set_throttle(throttle_transform(raw))
 
-            elif e.ev_type == "Key" and e.code == "BTN_SOUTH" and e.state == 1:
-                state.toggle_recording()
+                # Many pads use ABS_RZ or ABS_Z for right trigger
+                elif e.code in ("ABS_RZ", "ABS_Z"):
+                    # Triggers are often 0..255, so map that to [0, MAX_THROTTLE]
+                    v = e.state
+                    # safety clamp, just in case
+                    v = max(0, min(255, v))
+                    norm = v / 255.0  # 0..1
+                    throttle = norm * MAX_THROTTLE
+                    state.set_throttle(throttle)
 
-            elif e.ev_type == "Key" and e.code == "BTN_EAST" and e.state == 1:
-                print("[INFO] Exit button pressed")
-                state.stop()
-                return
-
+            elif e.ev_type == "Key":
+                if e.code == "BTN_SOUTH" and e.state == 1:
+                    state.toggle_recording()
+                elif e.code == "BTN_EAST" and e.state == 1:
+                    print("[INFO] Exit button pressed")
+                    state.stop()
+                    return
 
 # ----------------------------
 # FILE / CSV HELPERS
