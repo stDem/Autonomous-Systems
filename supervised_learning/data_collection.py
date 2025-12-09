@@ -40,7 +40,7 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # CONFIG DEFAULTS
 # ----------------------------
 
-MAX_THROTTLE = 0.30              # safety cap
+MAX_THROTTLE = 0.05              # safety cap
 DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
 AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
 
@@ -306,7 +306,7 @@ def main():
     car.steering = 0.0
     car.throttle = 0.0
     car.steering_gain = 1.0
-    car.throttle_gain = 1.0
+    car.throttle_gain = 0.5
 
     # Init camera
     camera = CSICamera(
