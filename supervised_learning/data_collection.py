@@ -161,6 +161,17 @@ def gamepad_loop(state: TeleopState):
                         norm = 1.0
                     # Optional non-linear curve & deadzone
                     state.set_steering(steering_transform(norm))
+                    
+                # --- STRAIGHTEN: left stick vertical up, ABS_Y (0..255) ---
+                elif e.code == "ABS_Y":
+                    v = float(e.state)
+                    # If stick is pushed clearly UP (near 0), center steering
+                    if v < 30:   # threshold, adjust if you like
+                        state.set_steering(0.0)
+
+                # --- THROTTLE: right stick vertical, ABS_RZ (0..255) ---
+                elif e.code == "ABS_RZ":
+                    v = float(e.state)
 
                 # --- THROTTLE: right stick vertical on ABS_RZ (0..255) ---
                 elif e.code == "ABS_RZ":
