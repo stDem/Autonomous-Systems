@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
 JetRacer Pro – Gamepad teleop + data collection with VISUAL cropping
+and live camera preview.
 
-Features:
 - Teleoperate JetRacer with a gamepad.
-- At startup: show one camera frame, let you draw an ROI with the mouse.
+- At startup: show one camera frame, let you draw ROI with the mouse.
 - Save CROPPED images + steering + throttle + timestamp.
 - One folder per session for easy cleanup.
+- Shows a live preview window of the (cropped) camera while running.
 
 Controls:
     Left stick horizontal (ABS_X)  -> steering
-    Right stick vertical  (ABS_RY) -> throttle (forward)
+    Right stick vertical  (ABS_RY) -> throttle (forward only, for safety)
     A / Cross (BTN_SOUTH)          -> toggle recording
     B / Circle (BTN_EAST)          -> quit
 
-Run (over SSH with XQuartz):
+Run (from your Mac with XQuartz):
     ssh -Y jetson@<JETSON_IP>
-    python3 collect_data_visual_crop.py --data-root ./data --session-name run1
+    cd ~/anst/supervised_learning
+    python3 data_collection.py --data-root ./data --session-name run1
 """
 
 import os
@@ -38,18 +40,13 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # CONFIG DEFAULTS
 # ----------------------------
 
-# Safety: cap throttle
-MAX_THROTTLE = 0.30
-
-# Save at ~10 FPS while recording
-DEFAULT_SAVE_INTERVAL = 0.10
-
-# Gamepad axis range (common)
-AXIS_MAX_ABS = 32767.0
+MAX_THROTTLE = 0.30              # safety cap
+DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
+AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
 
 
 # ----------------------------
-# STATE
+# TELEOP STATE
 # ----------------------------
 
 class TeleopState:
@@ -83,7 +80,7 @@ class TeleopState:
 
 
 # ----------------------------
-# GAMEPAD UTILITIES
+# GAMEPAD HELPERS
 # ----------------------------
 
 def axis_to_unit(state: int) -> float:
@@ -93,10 +90,10 @@ def axis_to_unit(state: int) -> float:
 
 def steering_transform(raw: float) -> float:
     """
-    Map raw axis [-1, 1] to steering [-1, 1] with deadzone + non-linear curve
-    for more fine control near center.
+    Map raw axis [-1, 1] to steering [-1, 1]
+    with deadzone + non-linear curve for fine control near center.
     """
-    x = raw  # flip sign here if left/right feels inverted
+    x = raw  # flip sign here if your left/right feels inverted
 
     deadzone = 0.05
     if abs(x) < deadzone:
@@ -114,10 +111,10 @@ def steering_transform(raw: float) -> float:
 def throttle_transform(raw: float) -> float:
     """
     Map raw axis [-1, 1] to throttle [0, MAX_THROTTLE] (forward only).
-    If you want reverse as well, you can adapt this to [-MAX, MAX].
+    If you want reverse later, we can extend this to [-MAX, MAX].
     """
     # For many controllers, pushing stick forward yields negative values
-    y = -raw  # flip sign if you prefer opposite
+    y = -raw  # flip sign if needed
 
     deadzone = 0.05
     if y < deadzone:
@@ -130,9 +127,9 @@ def throttle_transform(raw: float) -> float:
 
 
 def gamepad_loop(state: TeleopState):
-    """Background loop reading the gamepad and updating TeleopState."""
+    """Background thread that reads the gamepad and updates TeleopState."""
     print("[INFO] Gamepad loop started")
-    print("[INFO] BTN_SOUTH (A) -> toggle recording, BTN_EAST (B) -> quit")
+    print("[INFO] BTN_SOUTH (A/Cross) -> toggle recording, BTN_EAST (B/Circle) -> quit")
 
     while True:
         _, _, _, running = state.snapshot()
@@ -142,7 +139,7 @@ def gamepad_loop(state: TeleopState):
 
         events = get_gamepad()
         for e in events:
-            # Uncomment for debugging codes:
+            # Debug mapping if needed:
             # print(e.ev_type, e.code, e.state)
 
             if e.ev_type == "Absolute" and e.code == "ABS_X":
@@ -187,29 +184,37 @@ def open_csv_writer(csv_path: str):
 
 
 # ----------------------------
-# VISUAL CROPPING
+# VISUAL ROI (CROPPING)
 # ----------------------------
+
+def wait_for_first_frame(camera: CSICamera, timeout=5.0):
+    """Wait until camera.value is not None or timeout."""
+    start = time.time()
+    frame = camera.value
+    while frame is None and (time.time() - start) < timeout:
+        time.sleep(0.1)
+        frame = camera.value
+    return frame
+
 
 def select_roi_from_camera(camera: CSICamera):
     """
-    Grab a frame, open a window, and let the user draw an ROI.
-    Returns (crop_top, crop_bottom, crop_left, crop_right) in pixels.
+    Grab a frame from camera.value, open a window and let user draw ROI.
+    Returns crop margins (top, bottom, left, right) in pixels.
     """
     print("[INFO] Grabbing a frame for ROI selection...")
-    time.sleep(0.5)  # allow camera to warm up
-
-    frame = camera.read()
+    frame = wait_for_first_frame(camera, timeout=5.0)
     if frame is None:
-        raise RuntimeError("Camera returned None frame; cannot do ROI selection.")
+        raise RuntimeError("Camera did not produce a frame for ROI selection.")
 
     h, w, _ = frame.shape
-    win_name = "Select ROI (drag rectangle, ENTER to confirm)"
+    win_name = "Select ROI (drag, ENTER when done)"
     cv2.namedWindow(win_name, cv2.WINDOW_NORMAL)
     cv2.imshow(win_name, frame)
 
     print("[INFO] A window should appear on your Mac via XQuartz.")
     print("[INFO] Use mouse to drag a rectangle over the MAP area.")
-    print("[INFO] Press ENTER or SPACE to confirm, or ESC to cancel.")
+    print("[INFO] Then press ENTER or SPACE to confirm, or ESC to cancel.")
 
     roi = cv2.selectROI(win_name, frame, fromCenter=False, showCrosshair=True)
     cv2.destroyWindow(win_name)
@@ -219,7 +224,6 @@ def select_roi_from_camera(camera: CSICamera):
         print("[WARN] No ROI selected; using full frame.")
         return 0, 0, 0, 0
 
-    # Convert ROI (x, y, width, height) to crop margins
     crop_top = y
     crop_left = x
     crop_bottom = h - (y + rh)
@@ -278,12 +282,16 @@ def main():
     car.throttle_gain = 1.0
 
     # Init camera
-    camera = CSICamera(width=224, height=224,
-                       capture_width=1280, capture_height=720,
-                       capture_fps=30)
-    camera.running = True
+    camera = CSICamera(
+        width=224,
+        height=224,
+        capture_width=1280,
+        capture_height=720,
+        capture_fps=30,
+    )
+    camera.running = True  # start background capture
 
-    # VISUAL ROI selection
+    # ROI selection (single frame from camera.value)
     crop_top, crop_bottom, crop_left, crop_right = select_roi_from_camera(camera)
 
     # Start gamepad thread
@@ -308,10 +316,9 @@ def main():
             car.steering = steering
             car.throttle = throttle
 
-            # Read frame
-            frame = camera.read()
+            # Get latest frame from jetcam
+            frame = camera.value
             if frame is None:
-                print("[WARN] Camera frame is None")
                 time.sleep(0.01)
                 continue
 
@@ -319,6 +326,11 @@ def main():
             frame_cropped = crop_image(
                 frame, crop_top, crop_bottom, crop_left, crop_right
             )
+
+            # Show live preview (cropped)
+            cv2.imshow("JetRacer Camera (cropped)", frame_cropped)
+            # Needed to update the window; 1ms delay is fine
+            cv2.waitKey(1)
 
             # Save if recording
             now = time.time()
@@ -349,11 +361,13 @@ def main():
         print("[INFO] KeyboardInterrupt, stopping...")
 
     finally:
+        # Stop threads and hardware safely
         state.stop()
         car.throttle = 0.0
         car.steering = 0.0
         camera.running = False
         csv_file.close()
+        cv2.destroyAllWindows()
         print("[INFO] Shutdown complete")
 
 
