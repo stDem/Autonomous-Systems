@@ -144,36 +144,40 @@ def gamepad_loop(state: TeleopState):
             continue
 
         for e in events:
-            # Uncomment to debug if needed:
+            # Debug if needed:
             # print(e.ev_type, e.code, e.state)
 
-            # Analog axes
             if e.ev_type == "Absolute":
 
-                # Steering: left stick horizontal (likely ABS_X)
+                # --- STEERING: left stick horizontal, ABS_X (0..255) ---
                 if e.code == "ABS_X":
-                    raw = axis_to_unit(e.state)    # -1..1
-                    state.set_steering(steering_transform(raw))
+                    v = float(e.state)  # 0..255
+                    # center ~127 → map to [-1, 1]
+                    norm = (v - 127.0) / 127.0
+                    if norm < -1.0:
+                        norm = -1.0
+                    if norm > 1.0:
+                        norm = 1.0
+                    # Optional non-linear curve & deadzone
+                    state.set_steering(steering_transform(norm))
 
-                # Throttle: right stick vertical on ABS_RZ (0..255)
+                # --- THROTTLE: right stick vertical on ABS_RZ (0..255) ---
                 elif e.code == "ABS_RZ":
-                    v = e.state  # 0..255 from your debug
+                    v = float(e.state)  # 0..255 from your debug
 
-                    # Normalize so:
-                    #   up   (v ~ 0)   -> norm ~ 1.0 (max forward)
-                    #   center (127)   -> norm ~ 0.0 (no throttle)
-                    #   down (v ~255)  -> norm < 0 (we clip to 0)
-                    norm = (127.0 - float(v)) / 127.0   # roughly in [-1, 1]
+                    # up (v≈0) -> norm≈1 (max forward)
+                    # center (127) -> norm≈0
+                    # down (255) -> norm<0 (clipped to 0)
+                    norm = (127.0 - v) / 127.0
 
                     if norm < 0.0:
-                        norm = 0.0      # no reverse for now, safe
+                        norm = 0.0      # no reverse
                     if norm > 1.0:
                         norm = 1.0
 
                     throttle = norm * MAX_THROTTLE
                     state.set_throttle(throttle)
 
-            # Buttons
             elif e.ev_type == "Key":
                 if e.code == "BTN_SOUTH" and e.state == 1:
                     state.toggle_recording()
@@ -311,6 +315,7 @@ def main():
     car.throttle = 0.0
     car.steering_gain = 1.0
     car.throttle_gain = 1.0
+    car.steering_offset = -0.18
 
     # Init camera
     camera = CSICamera(
