@@ -306,7 +306,7 @@ def main():
     car.steering = 0.0
     car.throttle = 0.0
     car.steering_gain = 1.0
-    car.throttle_gain = 0.5
+    car.throttle_gain = 1.0
 
     # Init camera
     camera = CSICamera(
