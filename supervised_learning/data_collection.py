@@ -41,7 +41,7 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # ----------------------------
 
 MAX_THROTTLE = 0.2              # safety cap
-STEERING_LIMIT = 0.9
+STEERING_LIMIT = 0.6
 DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
 AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
 
@@ -89,12 +89,12 @@ def axis_to_unit(state: int) -> float:
     return max(-1.0, min(1.0, state / AXIS_MAX_ABS))
 
 
-def steering_transform(raw: float) -> float:
+def steering_transform(raw):
     """
-    Map raw axis [-1, 1] to steering [-1, 1]
-    with deadzone + non-linear curve for fine control near center.
+    raw: [-1, 1] from our ABS_X normalization.
+    We apply deadzone + non-linear curve + extra scale.
     """
-    x = raw  # flip sign here if your left/right feels inverted
+    x = raw
 
     deadzone = 0.05
     if abs(x) < deadzone:
@@ -105,7 +105,12 @@ def steering_transform(raw: float) -> float:
     else:
         x = (x + deadzone) / (1.0 - deadzone)
 
+    # square curve for fine control near center
     x = math.copysign(x * x, x)
+
+    # extra scale: don’t go all the way to +-1
+    x *= 0.7   # 70% of full steering
+
     return max(-1.0, min(1.0, x))
 
 
@@ -329,7 +334,7 @@ def main():
     car = NvidiaRacecar()
 
     # SAFE, calibrated-ish defaults (from official JetRacer / Waveshare docs)
-    car.steering_gain   = -0.65   # do NOT make this bigger in magnitude
+    car.steering_gain   = -0.5   # do NOT make this bigger in magnitude
     car.steering_offset = -0.18   # your previously working value
 
     car.throttle_gain = 1.0       # OK, we'll clamp separately
