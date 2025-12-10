@@ -41,9 +41,11 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # ----------------------------
 
 MAX_THROTTLE = 0.2              # safety cap
-STEERING_LIMIT = 0.6
+STEERING_LIMIT = 0.5
 DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
 AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
+STEERING_SMOOTH = 0.2   # 0..1, smaller = smoother / slower reaction
+THROTTLE_SMOOTH = 0.2
 
 
 # ----------------------------
@@ -91,26 +93,29 @@ def axis_to_unit(state: int) -> float:
 
 def steering_transform(raw):
     """
-    raw: [-1, 1] from our ABS_X normalization.
-    We apply deadzone + non-linear curve + extra scale.
+    raw: [-1, 1] from ABS_X normalization.
+    We apply deadzone + soft curve + extra scaling
+    so the gamepad becomes less sensitive.
     """
     x = raw
 
-    deadzone = 0.05
+    deadzone = 0.08  # bigger deadzone => more stable straight driving
     if abs(x) < deadzone:
         return 0.0
 
+    # rescale outside deadzone to [-1, 1]
     if x > 0:
         x = (x - deadzone) / (1.0 - deadzone)
     else:
         x = (x + deadzone) / (1.0 - deadzone)
 
-    # square curve for fine control near center
-    x = math.copysign(x * x, x)
+    # softer non-linearity: cube is gentler than square
+    x = math.copysign(abs(x) ** 3, x)
 
-    # extra scale: don’t go all the way to +-1
-    x *= 0.7   # 70% of full steering
+    # extra scale: shrink max steering
+    x *= 0.5   # 50% of full steering
 
+    # final clamp
     return max(-1.0, min(1.0, x))
 
 
@@ -178,25 +183,19 @@ def gamepad_loop(state: TeleopState):
 
                 # --- THROTTLE: right stick vertical on ABS_RZ (0..255) ---
                 elif e.code == "ABS_RZ":
-                    v = float(e.state)  # 0..255 from your debug
+                    v = float(e.state)  # 0..255
 
-                    # up (v≈0)   -> norm≈1 (max forward)
-                    # center(127)-> norm≈0
-                    # down(255)  -> norm<0 (we clip to 0, no reverse)
                     norm = (127.0 - v) / 127.0
-
                     if norm < 0.0:
-                        norm = 0.0      # no reverse
+                        norm = 0.0
                     if norm > 1.0:
                         norm = 1.0
 
-                    # scale by MAX_THROTTLE, but clamp to servo's [-1, 1]
-                    throttle = norm * MAX_THROTTLE
-                    if throttle > 1.0:
-                        throttle = 1.0
-                    if throttle < -1.0:
-                        throttle = -1.0
+                    # soft curve: fine control near 0, only strong near full stick
+                    norm = norm ** 2
 
+                    throttle = norm * MAX_THROTTLE
+                    throttle = max(-1.0, min(1.0, throttle))
                     state.set_throttle(throttle)
 
             elif e.ev_type == "Key":
@@ -364,6 +363,9 @@ def main():
 
     print("[INFO] Main loop started.")
     print("[INFO] Drive with gamepad. Press A/Cross to toggle recording.")
+    
+    steering_smoothed = 0.0
+    throttle_smoothed = 0.0
 
     try:
         while True:
@@ -371,9 +373,16 @@ def main():
             if not running:
                 print("[INFO] Main loop exiting...")
                 break
-            # extra safety: clamp before sending to hardware
-            steering_cmd = max(-STEERING_LIMIT, min(STEERING_LIMIT, steering))
-            throttle_cmd = max(-1.0, min(1.0, throttle))
+            # exponential smoothing
+            steering_smoothed = (
+                steering_smoothed + STEERING_SMOOTH * (steering - steering_smoothed)
+            )
+            throttle_smoothed = (
+                throttle_smoothed + THROTTLE_SMOOTH * (throttle - throttle_smoothed)
+            )
+
+            steering_cmd = max(-STEERING_LIMIT, min(STEERING_LIMIT, steering_smoothed))
+            throttle_cmd = max(-1.0, min(1.0, throttle_smoothed))
 
             car.steering = steering_cmd
             car.throttle = throttle_cmd
