@@ -1,12 +1,29 @@
 #!/usr/bin/env python3
+# train_control_cnn.py  (Python 3.6 compatible, Jetson Nano friendly)
+#
+# Dataset layout:
+#   data/run_manual/
+#     images/
+#       *.jpg / *.png ...
+#     labels.csv   (must include columns: steering, throttle, and filename OR image_path)
+#
+# Trains a DAVE-2 style CNN to predict [steering, throttle].
+# Small-dataset friendly:
+#   - computes dataset image mean/std (optional, default ON)
+#   - uses ONLY road-safe augmentations (brightness/contrast/gamma/blur/noise)
+#   - dropout + weight decay
+#   - validation split + early stopping
+#
+# Output:
+#   models/best_control_cnn.pth
+#   models/control_norm.json   (image mean/std + resize info)
+
+from __future__ import print_function
 import os
 import csv
 import json
-import math
 import random
 import argparse
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
 
 import cv2
 import numpy as np
@@ -16,47 +33,42 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 
+
 # -------------------------
 # Reproducibility
 # -------------------------
-def seed_all(seed: int = 42):
+def seed_all(seed=42):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    try:
+        torch.cuda.manual_seed_all(seed)
+    except Exception:
+        pass
+
 
 # -------------------------
-# Data reading
+# Read labels.csv
 # -------------------------
-def read_labels_csv(labels_path: str) -> List[Dict[str, str]]:
-    """
-    Supports common variants:
-      - filename, steering, throttle
-      - image_path, steering, throttle
-    Ignores extra columns.
-    """
+def read_labels_csv(labels_path):
     with open(labels_path, "r") as f:
         reader = csv.DictReader(f)
-        rows = [row for row in reader]
+        rows = [r for r in reader]
 
-    # basic check
     if not rows:
-        raise RuntimeError(f"labels.csv is empty: {labels_path}")
+        raise RuntimeError("labels.csv is empty: {}".format(labels_path))
 
-    # find image column
-    cols = rows[0].keys()
+    cols = list(rows[0].keys())
     if "filename" in cols:
         img_col = "filename"
     elif "image_path" in cols:
         img_col = "image_path"
     else:
-        raise RuntimeError(f"labels.csv must contain 'filename' or 'image_path'. Found columns: {list(cols)}")
+        raise RuntimeError("labels.csv must contain 'filename' or 'image_path'. Found: {}".format(cols))
 
-    # required label columns
-    if "steering" not in cols or "throttle" not in cols:
-        raise RuntimeError(f"labels.csv must contain 'steering' and 'throttle'. Found columns: {list(cols)}")
+    if ("steering" not in cols) or ("throttle" not in cols):
+        raise RuntimeError("labels.csv must contain 'steering' and 'throttle'. Found: {}".format(cols))
 
-    # normalize into standard dict keys
     out = []
     for r in rows:
         out.append({
@@ -66,27 +78,23 @@ def read_labels_csv(labels_path: str) -> List[Dict[str, str]]:
         })
     return out
 
-def build_samples(data_dir: str) -> List[Tuple[str, float, float]]:
-    """
-    data_dir = data/run_manual
-    expects:
-      data_dir/images/...
-      data_dir/labels.csv
-    """
+
+def build_samples(data_dir):
     labels_path = os.path.join(data_dir, "labels.csv")
     images_dir = os.path.join(data_dir, "images")
 
     if not os.path.isfile(labels_path):
-        raise FileNotFoundError(f"Missing labels.csv: {labels_path}")
+        raise IOError("Missing labels.csv: {}".format(labels_path))
     if not os.path.isdir(images_dir):
-        raise FileNotFoundError(f"Missing images folder: {images_dir}")
+        raise IOError("Missing images folder: {}".format(images_dir))
 
     rows = read_labels_csv(labels_path)
 
-    samples: List[Tuple[str, float, float]] = []
+    samples = []
     for r in rows:
         img_rel = r["img"]
-        # allow absolute, or relative to images_dir, or relative to data_dir
+
+        # allow absolute or relative paths
         if os.path.isabs(img_rel) and os.path.isfile(img_rel):
             img_path = img_rel
         else:
@@ -97,10 +105,9 @@ def build_samples(data_dir: str) -> List[Tuple[str, float, float]]:
             elif os.path.isfile(cand2):
                 img_path = cand2
             else:
-                # try basename fallback (some logs store full paths)
                 img_path = os.path.join(images_dir, os.path.basename(img_rel))
                 if not os.path.isfile(img_path):
-                    print(f"[WARN] Missing image: {img_rel} (skipping)")
+                    print("[WARN] Missing image: {} (skipping)".format(img_rel))
                     continue
 
         steering = float(r["steering"])
@@ -111,18 +118,18 @@ def build_samples(data_dir: str) -> List[Tuple[str, float, float]]:
         raise RuntimeError("No valid samples found. Check labels.csv paths.")
     return samples
 
+
 # -------------------------
-# Normalization stats
+# Compute image mean/std
 # -------------------------
-def compute_image_mean_std(samples: List[Tuple[str, float, float]], resize_wh: Tuple[int, int],
-                           max_images: int = 500) -> Tuple[List[float], List[float]]:
-    """
-    Computes per-channel mean/std over up to max_images frames (for speed).
-    Uses RGB after resize.
-    """
+def compute_image_mean_std(samples, resize_wh, max_images=500):
     w, h = resize_wh
     n = min(len(samples), max_images)
-    idxs = np.linspace(0, len(samples) - 1, n).astype(int)
+    # evenly sample indices
+    if n <= 1:
+        idxs = [0]
+    else:
+        idxs = np.linspace(0, len(samples) - 1, n).astype(np.int32).tolist()
 
     acc = []
     for i in idxs:
@@ -131,11 +138,10 @@ def compute_image_mean_std(samples: List[Tuple[str, float, float]], resize_wh: T
         if img is None:
             continue
         img = cv2.resize(img, (w, h))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = img.astype(np.float32) / 255.0
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         acc.append(img.reshape(-1, 3))
+
     if not acc:
-        # fallback
         return [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
 
     pixels = np.concatenate(acc, axis=0)
@@ -143,77 +149,60 @@ def compute_image_mean_std(samples: List[Tuple[str, float, float]], resize_wh: T
     std = pixels.std(axis=0) + 1e-6
     return mean.tolist(), std.tolist()
 
-def compute_label_mean_std(samples: List[Tuple[str, float, float]]) -> Tuple[List[float], List[float]]:
-    ys = np.array([[s, t] for _, s, t in samples], dtype=np.float32)
-    mean = ys.mean(axis=0)
-    std = ys.std(axis=0) + 1e-6
-    return mean.tolist(), std.tolist()
 
 # -------------------------
 # Dataset
 # -------------------------
 class DrivingDataset(Dataset):
-    def __init__(
-        self,
-        samples: List[Tuple[str, float, float]],
-        input_wh: Tuple[int, int],
-        img_mean: List[float],
-        img_std: List[float],
-        y_mean: List[float],
-        y_std: List[float],
-        train: bool = True,
-        aug_strength: float = 1.0,
-    ):
+    def __init__(self, samples, input_w, input_h, img_mean, img_std, train=True, aug_strength=0.8):
         self.samples = samples
-        self.w, self.h = input_wh
+        self.w = int(input_w)
+        self.h = int(input_h)
+        self.train = bool(train)
+        self.aug_strength = float(aug_strength)
+
         self.img_mean = np.array(img_mean, dtype=np.float32)
         self.img_std = np.array(img_std, dtype=np.float32)
-        self.y_mean = np.array(y_mean, dtype=np.float32)
-        self.y_std = np.array(y_std, dtype=np.float32)
-        self.train = train
-        self.aug_strength = aug_strength
 
     def __len__(self):
         return len(self.samples)
 
-    def _augment(self, img_bgr: np.ndarray) -> np.ndarray:
+    def _augment(self, img_bgr):
         """
-        Road-safe augmentations: lighting + sensor noise only.
-        Avoid geometry transforms (rotation/shift/flip) because they change the correct steering
-        unless you also correct labels.
+        Road-safe augmentations: lighting + sensor effects ONLY.
+        No rotation/shift/flip (these change correct steering unless labels are corrected).
         """
         img = img_bgr
 
-        # Brightness / contrast
+        # brightness/contrast
         if random.random() < 0.9 * self.aug_strength:
             alpha = 1.0 + random.uniform(-0.20, 0.20) * self.aug_strength  # contrast
             beta = random.uniform(-15, 15) * self.aug_strength             # brightness
             img = cv2.convertScaleAbs(img, alpha=alpha, beta=beta)
 
-        # Gamma jitter (simulates exposure)
+        # gamma jitter
         if random.random() < 0.5 * self.aug_strength:
             gamma = 1.0 + random.uniform(-0.25, 0.25) * self.aug_strength
             gamma = max(0.6, min(1.6, gamma))
-            lut = np.array([((i / 255.0) ** (1.0 / gamma)) * 255 for i in range(256)]).astype("uint8")
+            lut = np.array([((i / 255.0) ** (1.0 / gamma)) * 255 for i in range(256)], dtype=np.uint8)
             img = cv2.LUT(img, lut)
 
-        # Mild blur (vibration)
+        # mild blur
         if random.random() < 0.25 * self.aug_strength:
             img = cv2.GaussianBlur(img, (3, 3), 0)
 
-        # Mild sensor noise
+        # mild noise
         if random.random() < 0.30 * self.aug_strength:
             noise = np.random.normal(0, 4 * self.aug_strength, img.shape).astype(np.float32)
             img = np.clip(img.astype(np.float32) + noise, 0, 255).astype(np.uint8)
 
         return img
 
-
-    def __getitem__(self, idx: int):
+    def __getitem__(self, idx):
         img_path, steering, throttle = self.samples[idx]
         img = cv2.imread(img_path)
         if img is None:
-            raise RuntimeError(f"Failed to read image: {img_path}")
+            raise RuntimeError("Failed to read image: {}".format(img_path))
 
         img = cv2.resize(img, (self.w, self.h))
 
@@ -221,22 +210,23 @@ class DrivingDataset(Dataset):
             img = self._augment(img)
 
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        img = (img - self.img_mean) / self.img_std  # normalize with dataset stats
-
-        # HWC -> CHW
-        img = np.transpose(img, (2, 0, 1))
+        img = (img - self.img_mean) / self.img_std
+        img = np.transpose(img, (2, 0, 1))  # HWC -> CHW
         x = torch.tensor(img, dtype=torch.float32)
 
+        # labels are NOT z-scored (simpler for first tests)
         y = torch.tensor([steering, throttle], dtype=torch.float32)
 
         return x, y
 
+
 # -------------------------
-# Model: DAVE-2 style + BN + Dropout
+# Model (DAVE-2 style + BN + Dropout)
 # -------------------------
 class Dave2Small(nn.Module):
-    def __init__(self, dropout_p: float = 0.5):
-        super().__init__()
+    def __init__(self, dropout_p=0.6):
+        super(Dave2Small, self).__init__()
+
         self.conv = nn.Sequential(
             nn.Conv2d(3, 24, kernel_size=5, stride=2),
             nn.BatchNorm2d(24),
@@ -259,7 +249,7 @@ class Dave2Small(nn.Module):
             nn.ReLU(inplace=True),
         )
 
-        # for input 66x200 -> conv output should be 64x1x18 (like DAVE-2)
+        # For input 66x200 -> output is typically 64x1x18
         self.fc = nn.Sequential(
             nn.Linear(64 * 1 * 18, 100),
             nn.ReLU(inplace=True),
@@ -280,92 +270,70 @@ class Dave2Small(nn.Module):
         x = x.view(x.size(0), -1)
         return self.fc(x)
 
+
 # -------------------------
 # Train
 # -------------------------
-@dataclass
-class TrainConfig:
-    data_dir: str
-    out_dir: str
-    input_w: int
-    input_h: int
-    batch_size: int
-    epochs: int
-    lr: float
-    weight_decay: float
-    val_split: float
-    patience: int
-    min_delta: float
-    num_workers: int
-    dropout: float
-    aug_strength: float
-    compute_img_stats: bool
-
-def train(cfg: TrainConfig):
+def train(args):
     seed_all(42)
 
-    samples = build_samples(cfg.data_dir)
-    print(f"[INFO] Samples: {len(samples)}")
+    samples = build_samples(args.data_dir)
+    print("[INFO] Samples: {}".format(len(samples)))
 
-    # normalization stats
-    y_mean, y_std = compute_label_mean_std(samples)
-    if cfg.compute_img_stats:
-        img_mean, img_std = compute_image_mean_std(samples, (cfg.input_w, cfg.input_h), max_images=500)
+    if args.compute_img_stats:
+        img_mean, img_std = compute_image_mean_std(samples, (args.input_w, args.input_h), max_images=500)
     else:
         img_mean, img_std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
 
-    print(f"[INFO] img_mean={img_mean}, img_std={img_std}")
-    print(f"[INFO] y_mean={y_mean}, y_std={y_std}")
+    print("[INFO] img_mean={}, img_std={}".format(img_mean, img_std))
 
     dataset = DrivingDataset(
         samples=samples,
-        input_wh=(cfg.input_w, cfg.input_h),
+        input_w=args.input_w,
+        input_h=args.input_h,
         img_mean=img_mean,
         img_std=img_std,
-        y_mean=y_mean,
-        y_std=y_std,
         train=True,
-        aug_strength=cfg.aug_strength,
+        aug_strength=args.aug_strength,
     )
 
     total_len = len(dataset)
-    val_len = max(1, int(cfg.val_split * total_len))
+    val_len = max(1, int(args.val_split * total_len))
     train_len = total_len - val_len
-    train_ds, val_ds = random_split(dataset, [train_len, val_len])
 
-    # disable aug for val
-    val_ds.dataset.train = False
+    train_ds, val_ds = random_split(dataset, [train_len, val_len])
+    val_ds.dataset.train = False  # no aug in val
 
     train_loader = DataLoader(
-        train_ds, batch_size=cfg.batch_size, shuffle=True,
-        num_workers=cfg.num_workers, pin_memory=True
+        train_ds, batch_size=args.batch_size, shuffle=True,
+        num_workers=args.num_workers, pin_memory=True
     )
     val_loader = DataLoader(
-        val_ds, batch_size=cfg.batch_size, shuffle=False,
-        num_workers=cfg.num_workers, pin_memory=True
+        val_ds, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.num_workers, pin_memory=True
     )
 
-    model = Dave2Small(dropout_p=cfg.dropout).to(DEVICE)
+    model = Dave2Small(dropout_p=args.dropout).to(args.device)
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+    optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
-    os.makedirs(cfg.out_dir, exist_ok=True)
-    best_model_path = os.path.join(cfg.out_dir, "best_control_cnn.pth")
-    norm_path = os.path.join(cfg.out_dir, "control_norm.json")
+    os.makedirs(args.out_dir, exist_ok=True)
+    best_model_path = os.path.join(args.out_dir, "best_control_cnn.pth")
+    norm_path = os.path.join(args.out_dir, "control_norm.json")
 
-    best_val = float("inf")
+    best_val = 1e18
     no_improve = 0
 
-    print(f"[INFO] Device: {DEVICE}")
-    print(f"[INFO] Train/Val: {train_len}/{val_len}")
+    print("[INFO] Device: {}".format(args.device))
+    print("[INFO] Train/Val: {}/{}".format(train_len, val_len))
 
-    for epoch in range(1, cfg.epochs + 1):
+    for epoch in range(1, args.epochs + 1):
         # ---- train ----
         model.train()
         train_sum = 0.0
         for x, y in train_loader:
-            x = x.to(DEVICE, non_blocking=True)
-            y = y.to(DEVICE, non_blocking=True)
+            x = x.to(args.device, non_blocking=True)
+            y = y.to(args.device, non_blocking=True)
 
             optimizer.zero_grad()
             pred = model(x)
@@ -374,48 +342,46 @@ def train(cfg: TrainConfig):
             optimizer.step()
 
             train_sum += loss.item() * x.size(0)
-        train_loss = train_sum / train_len
+        train_loss = train_sum / float(train_len)
 
         # ---- val ----
         model.eval()
         val_sum = 0.0
         with torch.no_grad():
             for x, y in val_loader:
-                x = x.to(DEVICE, non_blocking=True)
-                y = y.to(DEVICE, non_blocking=True)
+                x = x.to(args.device, non_blocking=True)
+                y = y.to(args.device, non_blocking=True)
                 pred = model(x)
                 loss = criterion(pred, y)
                 val_sum += loss.item() * x.size(0)
-        val_loss = val_sum / val_len
+        val_loss = val_sum / float(val_len)
 
-        print(f"Epoch {epoch}/{cfg.epochs}  train={train_loss:.6f}  val={val_loss:.6f}")
+        print("Epoch {}/{}  train={:.6f}  val={:.6f}".format(epoch, args.epochs, train_loss, val_loss))
 
         # ---- early stopping ----
-        if val_loss + cfg.min_delta < best_val:
+        if val_loss + args.min_delta < best_val:
             best_val = val_loss
             no_improve = 0
             torch.save(model.state_dict(), best_model_path)
 
-            # save normalization used for inference
             with open(norm_path, "w") as f:
                 json.dump({
-                    "input_w": cfg.input_w,
-                    "input_h": cfg.input_h,
+                    "input_w": int(args.input_w),
+                    "input_h": int(args.input_h),
                     "img_mean": img_mean,
                     "img_std": img_std,
-                    "y_mean": y_mean,
-                    "y_std": y_std,
                 }, f, indent=2)
 
-            print(f"  -> saved {best_model_path}")
-            print(f"  -> saved {norm_path}")
+            print("  -> saved {}".format(best_model_path))
+            print("  -> saved {}".format(norm_path))
         else:
             no_improve += 1
-            if no_improve >= cfg.patience:
+            if no_improve >= args.patience:
                 print("[INFO] Early stopping.")
                 break
 
-    print(f"[INFO] Best val loss: {best_val:.6f}")
+    print("[INFO] Best val loss: {:.6f}".format(best_val))
+
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -435,29 +401,17 @@ def parse_args():
 
     p.add_argument("--num-workers", type=int, default=2)
 
-    p.add_argument("--dropout", type=float, default=0.6)        # stronger for small dataset
-    p.add_argument("--aug-strength", type=float, default=1.0)   # increase to 1.2 if overfitting fast
+    p.add_argument("--dropout", type=float, default=0.6)
+    p.add_argument("--aug-strength", type=float, default=0.8)
+
+    # mean/std computation is useful for small dataset
     p.add_argument("--compute-img-stats", action="store_true", default=True)
 
     args = p.parse_args()
-    return TrainConfig(
-        data_dir=args.data_dir,
-        out_dir=args.out_dir,
-        input_w=args.input_w,
-        input_h=args.input_h,
-        batch_size=args.batch_size,
-        epochs=args.epochs,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-        val_split=args.val_split,
-        patience=args.patience,
-        min_delta=args.min_delta,
-        num_workers=args.num_workers,
-        dropout=args.dropout,
-        aug_strength=args.aug_strength,
-        compute_img_stats=args.compute_img_stats,
-    )
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    return args
+
 
 if __name__ == "__main__":
-    cfg = parse_args()
-    train(cfg)
+    args = parse_args()
+    train(args)
