@@ -51,14 +51,29 @@ def seed_all(seed=42):
 # Read labels.csv
 # -------------------------
 def read_labels_csv(labels_path):
+    # Read a sample to detect delimiter
     with open(labels_path, "r") as f:
-        reader = csv.DictReader(f)
+        sample = f.read(2048)
+        f.seek(0)
+
+        # detect ; vs ,
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=";,")
+            delim = dialect.delimiter
+        except Exception:
+            # fallback: if semicolon appears more than comma in header, use ;
+            header_line = sample.splitlines()[0] if sample else ""
+            delim = ";" if header_line.count(";") > header_line.count(",") else ","
+
+        reader = csv.DictReader(f, delimiter=delim)
         rows = [r for r in reader]
 
     if not rows:
         raise RuntimeError("labels.csv is empty: {}".format(labels_path))
 
     cols = list(rows[0].keys())
+
+    # find image column
     if "filename" in cols:
         img_col = "filename"
     elif "image_path" in cols:
@@ -66,6 +81,7 @@ def read_labels_csv(labels_path):
     else:
         raise RuntimeError("labels.csv must contain 'filename' or 'image_path'. Found: {}".format(cols))
 
+    # required label columns
     if ("steering" not in cols) or ("throttle" not in cols):
         raise RuntimeError("labels.csv must contain 'steering' and 'throttle'. Found: {}".format(cols))
 
@@ -77,6 +93,7 @@ def read_labels_csv(labels_path):
             "throttle": r["throttle"],
         })
     return out
+
 
 
 def build_samples(data_dir):
