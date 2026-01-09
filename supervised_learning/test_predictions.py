@@ -5,10 +5,11 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-# ----- model (must match training) -----
+# ----- model must match training train_control_cnn.py exactly -----
 class Dave2Small(nn.Module):
-    def __init__(self, dropout_p=0.0):
+    def __init__(self, dropout_p=0.6):
         super(Dave2Small, self).__init__()
+
         self.conv = nn.Sequential(
             nn.Conv2d(3, 24, kernel_size=5, stride=2),
             nn.BatchNorm2d(24),
@@ -30,13 +31,19 @@ class Dave2Small(nn.Module):
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
         )
+
         self.fc = nn.Sequential(
             nn.Linear(64 * 1 * 18, 100),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_p),
+
             nn.Linear(100, 50),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_p),
+
             nn.Linear(50, 10),
             nn.ReLU(inplace=True),
+
             nn.Linear(10, 2),
         )
 
@@ -46,7 +53,6 @@ class Dave2Small(nn.Module):
         return self.fc(x)
 
 def parse_labels_semicolon(csv_path):
-    # simple semicolon parser
     rows = []
     with open(csv_path, "r") as f:
         header = f.readline().strip().split(";")
@@ -54,8 +60,7 @@ def parse_labels_semicolon(csv_path):
             parts = line.strip().split(";")
             if len(parts) != len(header):
                 continue
-            r = dict(zip(header, parts))
-            rows.append(r)
+            rows.append(dict(zip(header, parts)))
     return rows
 
 def main():
@@ -67,11 +72,11 @@ def main():
     mean = np.array(norm["img_mean"], dtype=np.float32)
     std = np.array(norm["img_std"], dtype=np.float32)
 
-    model = Dave2Small().to(device)
+    model = Dave2Small(dropout_p=0.6).to(device)
     model.load_state_dict(torch.load("./models/best_control_cnn.pth", map_location=device))
     model.eval()
 
-    data_dir = "./data/run_map_curves_main"
+    data_dir = "./data/run_manual"
     img_dir = os.path.join(data_dir, "images")
     rows = parse_labels_semicolon(os.path.join(data_dir, "labels.csv"))
 
@@ -95,6 +100,7 @@ def main():
 
         with torch.no_grad():
             pred = model(x)[0].cpu().numpy()
+
         ps, pt = float(pred[0]), float(pred[1])
 
         print("GT: steer={:+.3f} thr={:+.3f} | PRED: steer={:+.3f} thr={:+.3f} | {}".format(
