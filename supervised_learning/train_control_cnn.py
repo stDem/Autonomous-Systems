@@ -94,7 +94,15 @@ def read_labels_csv(labels_path):
         })
     return out
 
-
+def build_samples_multi(data_dirs):
+    all_samples = []
+    for d in data_dirs:
+        s = build_samples(d)
+        print("[INFO] {} samples from {}".format(len(s), d))
+        all_samples.extend(s)
+    if not all_samples:
+        raise RuntimeError("No samples found in data dirs: {}".format(data_dirs))
+    return all_samples
 
 def build_samples(data_dir):
     labels_path = os.path.join(data_dir, "labels.csv")
@@ -294,7 +302,7 @@ class Dave2Small(nn.Module):
 def train(args):
     seed_all(42)
 
-    samples = build_samples(args.data_dir)
+    samples = build_samples_multi(args.data_dirs)
     print("[INFO] Samples: {}".format(len(samples)))
 
     if args.compute_img_stats:
@@ -402,7 +410,8 @@ def train(args):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dir", type=str, default="./data/run_manual")
+    p.add_argument("--data-dirs", nargs="+", default=["./data/run_manual"],
+               help="One or more dataset folders (each has images/ and labels.csv)")
     p.add_argument("--out-dir", type=str, default="./models")
     p.add_argument("--input-w", type=int, default=200)
     p.add_argument("--input-h", type=int, default=66)
