@@ -18,3 +18,10 @@ python3 train_control_cnn.py --train-dirs ./data/run_map_straight ./data/run_map
 drive_autonomous.py
 
 python3 drive_autonomous.py
+
+
+### evaluation model performance
+
+eval_model.py
+
+python3 eval_model.py
