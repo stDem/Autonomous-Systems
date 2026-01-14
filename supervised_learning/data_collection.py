@@ -41,11 +41,11 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 # ----------------------------
 
 MAX_THROTTLE = 0.2              # safety cap
-STEERING_LIMIT = 0.5
+STEERING_LIMIT = 1.0
 DEFAULT_SAVE_INTERVAL = 0.10     # seconds between saved frames (~10 FPS)
 AXIS_MAX_ABS = 32767.0           # typical gamepad axis range
-STEERING_SMOOTH = 0.2   # 0..1, smaller = smoother / slower reaction
-THROTTLE_SMOOTH = 0.2
+STEERING_SMOOTH = 0   # 0..1, smaller = smoother / slower reaction
+THROTTLE_SMOOTH = 0
 
 
 # ----------------------------
@@ -334,7 +334,7 @@ def main():
 
     # SAFE, calibrated-ish defaults (from official JetRacer / Waveshare docs)
     car.steering_gain   = -0.5   # do NOT make this bigger in magnitude
-    car.steering_offset = -0.18   # your previously working value
+    car.steering_offset = -0.18 
 
     car.throttle_gain = 1.0       # OK, we'll clamp separately
     car.steering = 0.0
