@@ -513,7 +513,7 @@ def train(args):
             print("  -> saved {}".format(best_model_path))
             print("  -> saved {}".format(norm_path))
         else:
-            no_improve += 4
+            no_improve += 5
             if no_improve >= args.patience:
                 print("[INFO] Early stopping.")
                 break
