@@ -230,6 +230,17 @@ def build_samples(data_dir):
     return samples
 
 
+def build_samples_from_dirs(dirs):
+    all_samples = []
+    for d in dirs:
+        s = build_samples(d)
+        print("[INFO] {} samples from {}".format(len(s), d))
+        all_samples.extend(s)
+    if not all_samples:
+        raise RuntimeError("No samples found in dirs: {}".format(dirs))
+    return all_samples
+
+
 # -------------------------
 # Compute image mean/std
 # -------------------------
@@ -388,18 +399,24 @@ class Dave2Small(nn.Module):
 def train(args):
     seed_all(42)
 
-    samples = build_samples_multi(args.data_dirs)
-    print("[INFO] Samples: {}".format(len(samples)))
+    # ---- build train/val from separate runs ----
+    train_samples = build_samples_multi(args.train_dirs)
+    val_samples   = build_samples_multi(args.val_dirs)
 
+    print("[INFO] Train samples: {}".format(len(train_samples)))
+    print("[INFO] Val samples:   {}".format(len(val_samples)))
+
+    # IMPORTANT: compute mean/std from TRAIN only
     if args.compute_img_stats:
-        img_mean, img_std = compute_image_mean_std(samples, (args.input_w, args.input_h), max_images=500)
+        img_mean, img_std = compute_image_mean_std(train_samples, (args.input_w, args.input_h), max_images=500)
     else:
         img_mean, img_std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
 
     print("[INFO] img_mean={}, img_std={}".format(img_mean, img_std))
 
-    dataset = DrivingDataset(
-        samples=samples,
+    # ---- create datasets ----
+    train_dataset = DrivingDataset(
+        samples=train_samples,
         input_w=args.input_w,
         input_h=args.input_h,
         img_mean=img_mean,
@@ -408,19 +425,22 @@ def train(args):
         aug_strength=args.aug_strength,
     )
 
-    total_len = len(dataset)
-    val_len = max(1, int(args.val_split * total_len))
-    train_len = total_len - val_len
-
-    train_ds, val_ds = random_split(dataset, [train_len, val_len])
-    val_ds.dataset.train = False  # no aug in val
+    val_dataset = DrivingDataset(
+        samples=val_samples,
+        input_w=args.input_w,
+        input_h=args.input_h,
+        img_mean=img_mean,
+        img_std=img_std,
+        train=False,          # no augmentation for validation
+        aug_strength=0.0,
+    )
 
     train_loader = DataLoader(
-        train_ds, batch_size=args.batch_size, shuffle=True,
+        train_dataset, batch_size=args.batch_size, shuffle=True,
         num_workers=args.num_workers, pin_memory=True
     )
     val_loader = DataLoader(
-        val_ds, batch_size=args.batch_size, shuffle=False,
+        val_dataset, batch_size=args.batch_size, shuffle=False,
         num_workers=args.num_workers, pin_memory=True
     )
 
@@ -435,8 +455,12 @@ def train(args):
     best_val = 1e18
     no_improve = 0
 
+    train_len = len(train_dataset)
+    val_len   = len(val_dataset)
+
     print("[INFO] Device: {}".format(args.device))
-    print("[INFO] Train/Val: {}/{}".format(train_len, val_len))
+    print("[INFO] Train/Val: {}/{}".format(len(train_dataset), len(val_dataset)))
+
 
     for epoch in range(1, args.epochs + 1):
         # ---- train ----
@@ -513,7 +537,7 @@ def train(args):
             print("  -> saved {}".format(best_model_path))
             print("  -> saved {}".format(norm_path))
         else:
-            no_improve += 5
+            no_improve += 1
             if no_improve >= args.patience:
                 print("[INFO] Early stopping.")
                 break
@@ -522,8 +546,11 @@ def train(args):
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--data-dirs", nargs="+", default=["./data/run_manual"],
-               help="One or more dataset folders (each has images/ and labels.csv)")
+    p.add_argument("--train-dirs", nargs="+", required=True,
+               help="One or more dataset folders for TRAINING (each has images/ and labels.csv)")
+    p.add_argument("--val-dirs", nargs="+", required=True,
+               help="One or more dataset folders for VALIDATION (each has images/ and labels.csv)")
+
     p.add_argument("--out-dir", type=str, default="./models")
     p.add_argument("--input-w", type=int, default=200)
     p.add_argument("--input-h", type=int, default=66)
@@ -534,8 +561,8 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=1e-4)
 
     p.add_argument("--val-split", type=float, default=0.2)
-    p.add_argument("--patience", type=int, default=10)
-    p.add_argument("--min-delta", type=float, default=1e-4)
+    p.add_argument("--patience", type=int, default=20)
+    p.add_argument("--min-delta", type=float, default=1e-5)
 
     p.add_argument("--num-workers", type=int, default=2)
 

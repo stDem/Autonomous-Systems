@@ -10,7 +10,12 @@
 
  train_control_cnn.py
 
-python3 train_control_cnn.py --data-dirs ./data/run_manual ./data/new_run_manual2 --out-dir ./models --aug-strength 0.8 --dropout 0.6 --viz-features --viz-every 2
+python3 train_control_cnn.py \
+  --train-dirs ./data/run_map_straight ./data/run_map_curves_main ./data/new_run_manual2 ./data/new_run_manual1 ./data/new_run_manual\
+  --val-dirs ./data/run_manual \
+  --out-dir ./models \
+  --aug-strength 0.8 \
+  --dropout 0.6
 
 
 ### autonomous driving:
