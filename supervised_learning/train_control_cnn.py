@@ -24,6 +24,7 @@ import csv
 import json
 import random
 import argparse
+import math
 
 import cv2
 import numpy as np
@@ -33,6 +34,91 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader, random_split
 
+# -------------------------
+# features visualization
+# -------------------------
+
+def _norm01(x):
+    x = x.astype(np.float32)
+    x = x - x.min()
+    d = x.max() - x.min() + 1e-6
+    return x / d
+
+def _tile_feature_maps(feats_chw, tile_w, tile_h, max_maps=16, cols=4):
+    """
+    feats_chw: numpy [C,H,W]
+    returns: BGR uint8 tiled image
+    """
+    C = feats_chw.shape[0]
+    n = min(max_maps, C)
+
+    tiles = []
+    for i in range(n):
+        fm = feats_chw[i]
+        fm = _norm01(fm)
+        fm = (fm * 255).astype(np.uint8)
+        fm = cv2.resize(fm, (tile_w, tile_h))
+        fm_bgr = cv2.cvtColor(fm, cv2.COLOR_GRAY2BGR)
+        tiles.append(fm_bgr)
+
+    rows = int(math.ceil(n / float(cols)))
+    grid = np.zeros((rows * tile_h, cols * tile_w, 3), dtype=np.uint8)
+    for i, im in enumerate(tiles):
+        r = i // cols
+        c = i % cols
+        grid[r*tile_h:(r+1)*tile_h, c*tile_w:(c+1)*tile_w] = im
+    return grid
+
+def _add_label(img_bgr, text):
+    out = img_bgr.copy()
+    cv2.putText(out, text, (8, 20),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+    return out
+
+def visualize_features_multi(model, x_tensor, orig_bgr, window_name="Learned features", max_maps=16):
+    """
+    Shows conv1 + conv3 + conv5 feature maps in one window.
+    x_tensor: torch [1,3,H,W] normalized, on device
+    orig_bgr: BGR image for display (already resized to model input is OK)
+    """
+    tile_w, tile_h = 160, 52  # smaller tiles so everything fits on screen
+
+    with torch.no_grad():
+        # conv is Sequential of [conv, bn, relu] blocks repeated
+        a1 = model.conv[0:3](x_tensor)       # conv1 block output
+        a2 = model.conv[3:6](a1)
+        a3 = model.conv[6:9](a2)            # conv3 block output
+        a4 = model.conv[9:12](a3)
+        a5 = model.conv[12:15](a4)          # conv5 block output
+
+    f1 = a1[0].detach().cpu().numpy()       # [C,H,W]
+    f3 = a3[0].detach().cpu().numpy()
+    f5 = a5[0].detach().cpu().numpy()
+
+    # Make small original tile row (orig + black filler)
+    orig_small = cv2.resize(orig_bgr, (tile_w, tile_h))
+    orig_labeled = _add_label(orig_small, "input")
+
+    # Tile feature grids
+    g1 = _tile_feature_maps(f1, tile_w, tile_h, max_maps=max_maps, cols=4)
+    g3 = _tile_feature_maps(f3, tile_w, tile_h, max_maps=max_maps, cols=4)
+    g5 = _tile_feature_maps(f5, tile_w, tile_h, max_maps=max_maps, cols=4)
+
+    g1 = _add_label(g1, "conv1")
+    g3 = _add_label(g3, "conv3")
+    g5 = _add_label(g5, "conv5")
+
+    # Make a top strip that includes input + (optionally) a tiny legend block
+    # Pad input strip to the same width as grids
+    grid_width = g1.shape[1]
+    top = np.zeros((tile_h, grid_width, 3), dtype=np.uint8)
+    top[:, :tile_w] = orig_labeled
+
+    # Stack: input row, then conv1, conv3, conv5
+    merged = np.vstack([top, g1, g3, g5])
+
+    cv2.imshow(window_name, merged)
+    cv2.waitKey(1)
 
 # -------------------------
 # Reproducibility
@@ -367,6 +453,7 @@ def train(args):
             optimizer.step()
 
             train_sum += loss.item() * x.size(0)
+
         train_loss = train_sum / float(train_len)
 
         # ---- val ----
@@ -379,11 +466,37 @@ def train(args):
                 pred = model(x)
                 loss = criterion(pred, y)
                 val_sum += loss.item() * x.size(0)
+
         val_loss = val_sum / float(val_len)
 
-        print("Epoch {}/{}  train={:.6f}  val={:.6f}".format(epoch, args.epochs, train_loss, val_loss))
+        # ---- feature visualization (optional) ----
+        if args.viz_features and (epoch % args.viz_every == 0):
+            try:
+                # Take the first batch of the validation loader
+                x_vis, y_vis = next(iter(val_loader))
+                x0 = x_vis[0:1].to(args.device)  # first sample only
 
-        # ---- early stopping ----
+                # Convert normalized tensor back to displayable BGR
+                x_cpu = x0[0].detach().cpu().numpy()        # [3,H,W]
+                x_cpu = np.transpose(x_cpu, (1, 2, 0))      # [H,W,3] normalized
+                disp = (x_cpu * np.array(img_std) + np.array(img_mean))
+                disp = np.clip(disp * 255.0, 0, 255).astype(np.uint8)  # RGB
+                disp_bgr = cv2.cvtColor(disp, cv2.COLOR_RGB2BGR)
+
+                visualize_features_multi(
+                    model, x0, disp_bgr,
+                    window_name="Learned features",
+                    max_maps=16
+                )
+
+            except Exception as e:
+                print("[WARN] Feature viz failed:", e)
+
+        print("Epoch {}/{}  train={:.6f}  val={:.6f}".format(
+            epoch, args.epochs, train_loss, val_loss
+        ))
+
+        # ---- early stopping + save best ----
         if val_loss + args.min_delta < best_val:
             best_val = val_loss
             no_improve = 0
@@ -400,13 +513,12 @@ def train(args):
             print("  -> saved {}".format(best_model_path))
             print("  -> saved {}".format(norm_path))
         else:
-            no_improve += 1
+            no_improve += 4
             if no_improve >= args.patience:
                 print("[INFO] Early stopping.")
                 break
 
     print("[INFO] Best val loss: {:.6f}".format(best_val))
-
 
 def parse_args():
     p = argparse.ArgumentParser()
@@ -432,6 +544,10 @@ def parse_args():
 
     # mean/std computation is useful for small dataset
     p.add_argument("--compute-img-stats", action="store_true", default=True)
+    
+    p.add_argument("--viz-features", action="store_true", help="Show feature maps in an OpenCV window during training")
+    p.add_argument("--viz-every", type=int, default=2, help="Visualize every N epochs (if --viz-features)")
+
 
     args = p.parse_args()
     args.device = "cuda" if torch.cuda.is_available() else "cpu"
