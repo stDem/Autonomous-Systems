@@ -88,7 +88,7 @@ THROTTLE_MIN = 0.00       # no reverse for first real test
 THROTTLE_MAX = 0.18       # keep below your MAX_THROTTLE (0.2) at first
 
 # smoothing (0..1). Higher = smoother, slower reaction.
-STEER_SMOOTH = 0.65
+STEER_SMOOTH = 0.3
 THROTTLE_SMOOTH = 0.75
 
 # manual override thresholds (set higher if you want “mostly pure auto”)
@@ -228,6 +228,7 @@ def main():
     img_mean = np.array(norm["img_mean"], dtype=np.float32)
     img_std = np.array(norm["img_std"], dtype=np.float32)
 
+    steer_bias = float(norm.get("steer_bias", 0.0))
     # ---- load model ----
     model = Dave2Small(dropout_p=0.6).to(device)
     model.load_state_dict(torch.load("./models/best_control_cnn.pth", map_location=device))
@@ -299,7 +300,7 @@ def main():
             with torch.no_grad():
                 pred = model(x)[0].cpu().numpy()
 
-            auto_steer = float(pred[0])
+            auto_steer = float(pred[0]) + steer_bias
             auto_thr = float(pred[1])
 
             # ---- choose command by mode ----

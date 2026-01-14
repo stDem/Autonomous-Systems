@@ -276,13 +276,14 @@ def compute_image_mean_std(samples, resize_wh, max_images=500):
 # Dataset
 # -------------------------
 class DrivingDataset(Dataset):
-    def __init__(self, samples, input_w, input_h, img_mean, img_std, train=True, aug_strength=0.8):
+    def __init__(self, samples, input_w, input_h, img_mean, img_std,
+                 train=True, aug_strength=0.8, steer_bias=0.0):
         self.samples = samples
         self.w = int(input_w)
         self.h = int(input_h)
         self.train = bool(train)
         self.aug_strength = float(aug_strength)
-
+        self.steer_bias = float(steer_bias)
         self.img_mean = np.array(img_mean, dtype=np.float32)
         self.img_std = np.array(img_std, dtype=np.float32)
 
@@ -337,7 +338,7 @@ class DrivingDataset(Dataset):
         x = torch.tensor(img, dtype=torch.float32)
 
         # labels are NOT z-scored (simpler for first tests)
-        y = torch.tensor([steering, throttle], dtype=torch.float32)
+        y = torch.tensor([steering - self.steer_bias, throttle], dtype=torch.float32)
 
         return x, y
 
@@ -405,6 +406,10 @@ def train(args):
 
     print("[INFO] Train samples: {}".format(len(train_samples)))
     print("[INFO] Val samples:   {}".format(len(val_samples)))
+    
+    steer_bias = float(np.mean([s for (_, s, _) in train_samples]))
+    print("[INFO] Steering bias (train mean): {:.6f}".format(steer_bias))
+
 
     # IMPORTANT: compute mean/std from TRAIN only
     if args.compute_img_stats:
@@ -423,6 +428,7 @@ def train(args):
         img_std=img_std,
         train=True,
         aug_strength=args.aug_strength,
+        steer_bias=steer_bias,
     )
 
     val_dataset = DrivingDataset(
@@ -433,6 +439,7 @@ def train(args):
         img_std=img_std,
         train=False,          # no augmentation for validation
         aug_strength=0.0,
+        steer_bias=steer_bias,
     )
 
     train_loader = DataLoader(
@@ -532,6 +539,7 @@ def train(args):
                     "input_h": int(args.input_h),
                     "img_mean": img_mean,
                     "img_std": img_std,
+                     "steer_bias": steer_bias,
                 }, f, indent=2)
 
             print("  -> saved {}".format(best_model_path))
@@ -561,7 +569,7 @@ def parse_args():
     p.add_argument("--weight-decay", type=float, default=1e-4)
 
     p.add_argument("--val-split", type=float, default=0.2)
-    p.add_argument("--patience", type=int, default=20)
+    p.add_argument("--patience", type=int, default=15)
     p.add_argument("--min-delta", type=float, default=1e-5)
 
     p.add_argument("--num-workers", type=int, default=2)
