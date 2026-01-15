@@ -330,8 +330,7 @@ def main():
 
             # ---- optional debug window ----
             cv2.putText(frame_bgr,
-                        "mode={} steer={:+.3f} thr={:+.3f}".format("AUTO" if mode == MODE_AUTO else "STOP",
-                                                                  steer_s, thr_s),
+                        "steer={:+.3f} thr={:+.3f}".format(steer_s, thr_s),
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.imshow("Autonomous (B=STOP, A=toggle)", frame_bgr)
             if cv2.waitKey(1) & 0xFF == ord('q'):
