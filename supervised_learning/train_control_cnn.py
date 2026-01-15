@@ -568,7 +568,7 @@ def parse_args():
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--weight-decay", type=float, default=1e-4)
 
-    p.add_argument("--val-split", type=float, default=0.2)
+    # p.add_argument("--val-split", type=float, default=0.2)
     p.add_argument("--patience", type=int, default=15)
     p.add_argument("--min-delta", type=float, default=1e-5)
 
