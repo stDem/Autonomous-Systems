@@ -90,7 +90,7 @@ def main():
     model.eval()
 
     # evaluate on your validation run (change as needed)
-    val_folder = "./data/run_manual"
+    val_folder = "./data/full_manual"
     samples = load_dataset(val_folder)
     if not samples:
         print("No samples found in", val_folder)
