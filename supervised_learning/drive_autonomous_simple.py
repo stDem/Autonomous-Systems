@@ -7,7 +7,7 @@ from jetracer.nvidia_racecar import NvidiaRacecar
 
 # ---- Dave2Small (must match training) ----
 class Dave2Small(nn.Module):
-    def __init__(self, dropout_p=0.0):
+    def __init__(self, dropout_p=0.6):
         super(Dave2Small, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(3, 24, kernel_size=5, stride=2),
@@ -30,13 +30,19 @@ class Dave2Small(nn.Module):
             nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
         )
+
         self.fc = nn.Sequential(
             nn.Linear(64 * 1 * 18, 100),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_p),
+
             nn.Linear(100, 50),
             nn.ReLU(inplace=True),
+            nn.Dropout(dropout_p),
+
             nn.Linear(50, 10),
             nn.ReLU(inplace=True),
+
             nn.Linear(10, 2),
         )
 
@@ -56,7 +62,7 @@ std  = np.array(norm["img_std"], dtype=np.float32)
 steer_bias = float(norm.get("steer_bias", 0.0))
 
 # load model
-model = Dave2Small().to(device).eval()
+model = Dave2Small(dropout_p=0.6).to(device).eval()
 model.load_state_dict(torch.load("./models/best_control_cnn.pth", map_location=device))
 
 car = NvidiaRacecar()
@@ -64,7 +70,7 @@ camera = CSICamera(width=224, height=224, capture_width=1280, capture_height=720
 camera.running = True
 
 STEERING_GAIN = 1.0
-THROTTLE = 0.2  # start low
+THROTTLE = 0.2
 STEERING_CLAMP = 0.6
 
 def clamp(x, lo, hi):
