@@ -309,7 +309,7 @@ def main():
                 thr_cmd = 0.0
             else:
                 steer_cmd = auto_steer
-                thr_cmd = clamp(auto_thr, THROTTLE_MIN)
+                thr_cmd = max(auto_thr, THROTTLE_MIN)
 
                 # manual override (help recovery)
                 if abs(manual_steer) > OVERRIDE_STEER_THRESH:
