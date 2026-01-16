@@ -62,11 +62,14 @@ def _tile_feature_maps(feats_chw, tile_w, tile_h, max_maps=16, cols=4):
 
     rows = int(math.ceil(n / float(cols)))
     grid = np.zeros((rows * tile_h, cols * tile_w, 3), dtype=np.uint8)
+
     for i, im in enumerate(tiles):
         r = i // cols
         c = i % cols
-        grid[r*tile_h:(r+1)*tile_h, c*tile_w:(c+1)*tile_h] = im[:, :tile_w]  # safe
-        grid[r*tile_h:(r+1)*tile_h, c*tile_w:(c+1)*tile_w] = im
+        y0, y1 = r * tile_h, (r + 1) * tile_h
+        x0, x1 = c * tile_w, (c + 1) * tile_w
+        grid[y0:y1, x0:x1] = im
+
     return grid
 
 def _add_label(img_bgr, text):
