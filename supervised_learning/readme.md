@@ -2,11 +2,11 @@
 
  1. data_collection.py
 
- python3 data_collection.py --data-root ./data --session-name run1 --save-interval 0.5
+ python3 data_collection.py --data-root ./data --session-name wave_full --save-interval 0.5
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/curve_small_last --k 0.9 --deadzone 0.08 --steering-limit 0.6 --throttle 0.2
+ python3 label_from_photos.py --session ./data/wave_full --k 0.9 --deadzone 0.08 --steering-limit 0.6 --throttle 0.2
  
  
  
@@ -14,7 +14,7 @@
 
  train_control_cnn.py
 
-python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/straight ./data/curves_main ./data/curve_small_first ./data/curve_small_second ./data/curve_small_last --val-dirs ./data/full_manual --out-dir ./models --aug-strength 0.8 --dropout 0.4
+python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/straight ./data/curves_main ./data/wave_full --val-dirs ./data/full_manual --out-dir ./models --aug-strength 0.8 --dropout 0.4
 
 
 ### autonomous driving:
