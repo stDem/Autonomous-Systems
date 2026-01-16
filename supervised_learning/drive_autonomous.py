@@ -237,8 +237,8 @@ def main():
 
     # ---- init car ----
     car = NvidiaRacecar()
-    car.steering_gain = -0.5
-    car.steering_offset = -0.18
+    car.steering_gain = 1.0
+    car.steering_offset = 0.0
     # car.throttle_gain = 0.6
     car.steering = 0.0
     car.throttle = 0.0
@@ -309,29 +309,32 @@ def main():
                 thr_cmd = 0.0
             else:
                 steer_cmd = auto_steer
-                thr_cmd = auto_thr
+                thr_cmd = clamp(auto_thr, THROTTLE_MIN)
 
                 # manual override (help recovery)
                 if abs(manual_steer) > OVERRIDE_STEER_THRESH:
-                    steer_cmd = manual_steer
+                    steer_cmd = -manual_steer
                 if manual_thr > OVERRIDE_THROTTLE_THRESH:
                     thr_cmd = manual_thr
 
             # ---- clamp & smooth ----
             steer_cmd = clamp(steer_cmd, -STEERING_CLAMP, STEERING_CLAMP)
-            thr_cmd = clamp(thr_cmd, THROTTLE_MIN, THROTTLE_MAX)
+            thr_cmd = max(auto_thr, THROTTLE_MIN)
 
             steer_s = ema(steer_s, steer_cmd, STEER_SMOOTH)
             thr_s = ema(thr_s, thr_cmd, THROTTLE_SMOOTH)
 
             # ---- apply to car ----
-            car.steering = float(steer_s)
+            car.steering = -float(steer_s)
             car.throttle = float(thr_s)
 
             # ---- optional debug window ----
+            applied_steer = -steer_s
             cv2.putText(frame_bgr,
-                        "steer={:+.3f} thr={:+.3f}".format(steer_s, thr_s),
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
+                "steer={:+.3f} thr={:+.3f}".format(applied_steer, thr_s),
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
+
+
             cv2.imshow("Autonomous (B=STOP, A=toggle)", frame_bgr)
             if cv2.waitKey(1) & 0xFF == ord('q'):
                 print("[INFO] q pressed, exiting.")
