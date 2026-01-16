@@ -6,7 +6,7 @@
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/full_manual_big1 --k 0.9 --deadzone 0.03 --steering-limit 0.6 --throttle 0.2
+ python3 label_from_photos.py --session ./data/full_manual_dark --k 0.9 --deadzone 0.03 --steering-limit 0.6 --throttle 0.2
  
  
  
@@ -14,7 +14,7 @@
 
  train_control_cnn.py
 
-python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/full_manual_big1 ./data/straight ./data/curves_main ./data/wave_full --val-dirs ./data/full_manual --out-dir ./models --aug-strength 0.8 --dropout 0.4
+python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/full_manual_big1 ./data/straight ./data/curves_main ./data/wave_full --val-dirs ./data/full_manual ./data/full_manual_dark --out-dir ./models --aug-strength 0.8 --dropout 0.4
 
 
 ### autonomous driving:
