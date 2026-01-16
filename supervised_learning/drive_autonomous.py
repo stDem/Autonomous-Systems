@@ -83,7 +83,7 @@ class Dave2Small(nn.Module):
 # -----------------------------
 # Safety / tuning parameters
 # -----------------------------
-STEERING_CLAMP = 0.60     # limit steering magnitude
+STEERING_CLAMP = 0.35     # limit steering magnitude
 THROTTLE_MIN = 0.00       # no reverse for first real test
 THROTTLE_MAX = 0.3       # keep below your MAX_THROTTLE (0.2) at first
 
@@ -239,7 +239,7 @@ def main():
     car = NvidiaRacecar()
     car.steering_gain = -0.5
     car.steering_offset = -0.18
-    car.throttle_gain = 0.75
+    # car.throttle_gain = 0.6
     car.steering = 0.0
     car.throttle = 0.0
 
