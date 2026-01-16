@@ -14,7 +14,7 @@
 
  train_control_cnn.py
 
-python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/straight ./data/curve_main ./data/curves_small_first ./data/curve_small_second ./data/curve_small_last --val-dirs ./data/full_manual --out-dir ./models --aug-strength 0.8 --dropout 0.4
+python3 train_control_cnn.py --train-dirs ./data/full_manual_big ./data/straight ./data/curves_main ./data/curve_small_first ./data/curve_small_second ./data/curve_small_last --val-dirs ./data/full_manual --out-dir ./models --aug-strength 0.8 --dropout 0.4
 
 
 ### autonomous driving:

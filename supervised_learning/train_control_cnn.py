@@ -407,7 +407,8 @@ def train(args):
     print("[INFO] Train samples: {}".format(len(train_samples)))
     print("[INFO] Val samples:   {}".format(len(val_samples)))
     
-    steer_bias = float(np.mean([s for (_, s, _) in train_samples]))
+    steer_bias = 0.0
+    # steer_bias = float(np.mean([s for (_, s, _) in train_samples]))
     print("[INFO] Steering bias (train mean): {:.6f}".format(steer_bias))
 
 
