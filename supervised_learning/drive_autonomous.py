@@ -332,7 +332,7 @@ def main():
             applied_steer = -steer_s
             cv2.putText(frame_bgr,
                 "steer={:+.3f} thr={:+.3f}".format(applied_steer, thr_s),
-                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1, cv2.LINE_AA)
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
 
 
             cv2.imshow("Autonomous (B=STOP, A=toggle)", frame_bgr)
