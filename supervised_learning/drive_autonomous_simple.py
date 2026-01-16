@@ -68,6 +68,12 @@ model.load_state_dict(torch.load("./models/best_control_cnn.pth", map_location=d
 car = NvidiaRacecar()
 camera = CSICamera(width=224, height=224, capture_width=1280, capture_height=720, capture_fps=30)
 camera.running = True
+car = NvidiaRacecar()
+
+car.steering_gain = 1.0      # or -1.0 if direction is reversed
+car.steering_offset = 0.0    # start with 0 for symmetry
+car.throttle_gain = 1.0
+
 
 STEERING_GAIN = 1.0
 THROTTLE = 0.2
