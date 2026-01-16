@@ -239,7 +239,7 @@ def main():
     car = NvidiaRacecar()
     car.steering_gain = 1.0
     car.steering_offset = 0.0
-    # car.throttle_gain = 0.6
+    car.throttle_gain = 1.0
     car.steering = 0.0
     car.throttle = 0.0
 
