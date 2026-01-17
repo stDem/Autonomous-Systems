@@ -2,11 +2,11 @@
 
  1. data_collection.py
 
- python3 data_collection.py --data-root ./data --session-name half_manual --save-interval 0.5
+ python3 data_collection.py --data-root ./data --session-name curves --save-interval 0.5
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/full_manual_dark --k 0.9 --deadzone 0.07 --steering-limit 0.6 --throttle 0.2
+ python3 label_from_photos.py --session ./data/curves --k 0.9 --deadzone 0.07 --steering-limit 0.6 --throttle 0.2
  
  
  
