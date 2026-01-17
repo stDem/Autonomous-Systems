@@ -6,7 +6,7 @@
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/half_manual --k 0.9 --deadzone 0.07 --steering-limit 0.6 --throttle 0.2
+ python3 label_from_photos.py --session ./data/full_manual_dark --k 0.9 --deadzone 0.07 --steering-limit 0.6 --throttle 0.2
  
  
  
