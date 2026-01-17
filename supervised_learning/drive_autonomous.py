@@ -319,7 +319,11 @@ def main():
 
             # ---- clamp & smooth ----
             steer_cmd = clamp(steer_cmd, -STEERING_CLAMP, STEERING_CLAMP)
-            thr_cmd = clamp(thr_cmd, THROTTLE_MIN, THROTTLE_MAX)
+
+            if mode == MODE_STOP:
+                thr_cmd = 0.0
+            else:
+                thr_cmd = clamp(thr_cmd, THROTTLE_MIN, THROTTLE_MAX)
 
             steer_s = ema(steer_s, steer_cmd, STEER_SMOOTH)
             thr_s = ema(thr_s, thr_cmd, THROTTLE_SMOOTH)
