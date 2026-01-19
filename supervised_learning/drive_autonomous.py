@@ -88,7 +88,7 @@ THROTTLE_MIN = 0.14       # no reverse for first real test
 THROTTLE_MAX = 0.14       # keep below your MAX_THROTTLE (0.2) at first
 
 # smoothing (0..1). Higher = smoother, slower reaction.
-STEER_SMOOTH = 0.3
+STEER_SMOOTH = 0.2
 THROTTLE_SMOOTH = 0.5
 
 # manual override thresholds (set higher if you want “mostly pure auto”)
