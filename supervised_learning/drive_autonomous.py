@@ -83,7 +83,7 @@ class Dave2Small(nn.Module):
 # -----------------------------
 # Safety / tuning parameters
 # -----------------------------
-STEERING_CLAMP = 1.0     # limit steering magnitude
+STEERING_CLAMP = 0.9     # limit steering magnitude
 THROTTLE_MIN = 0.145       # no reverse for first real test
 THROTTLE_MAX = 0.145       # keep below your MAX_THROTTLE (0.2) at first
 
