@@ -1,3 +1,6 @@
 [submodule "supervised_learning/supervised_learning/yolov5"]
 	path = supervised_learning/supervised_learning/yolov5
 	url = https://github.com/ultralytics/yolov5
+[submodule "supervised_learning/yolov5"]
+	path = supervised_learning/yolov5
+	url = https://github.com/ultralytics/yolov5
