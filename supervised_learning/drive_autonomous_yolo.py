@@ -220,30 +220,44 @@ def ema(prev, new, smooth):
 
 
 def load_yolov5_model(device):
-
     HERE = os.path.dirname(os.path.abspath(__file__))
     YOLO_DIR = os.path.join(HERE, "yolov5")
-    WEIGHTS = OD_WEIGHTS  # keep your existing variable
 
-    # Add yolov5 to python path so we can import its code
+    # IMPORTANT: use absolute weights path
+    WEIGHTS = os.path.join(HERE, "models", "od_best.pt")  # or OD_WEIGHTS but absolute is safer
+
+    # Put yolov5 repo FIRST
     if YOLO_DIR not in sys.path:
         sys.path.insert(0, YOLO_DIR)
 
-    # Now we can import YOLOv5 internals
+    # If Python already loaded some other "models" or "utils", drop them
+    # (this is the usual reason for "models.common" failing)
+    for k in list(sys.modules.keys()):
+        if k == "models" or k.startswith("models."):
+            sys.modules.pop(k, None)
+        if k == "utils" or k.startswith("utils."):
+            sys.modules.pop(k, None)
+
+    # Now import from YOLOv5 repo
     from models.common import DetectMultiBackend
     from utils.general import check_img_size
     from utils.torch_utils import select_device
 
-    # pick device
     dev = select_device('0' if device == "cuda" else 'cpu')
 
-    # Load model backend (works for .pt)
-    model = DetectMultiBackend(WEIGHTS, device=dev, dnn=False, data=None, fp16=(device == "cuda"))
+    model = DetectMultiBackend(
+        WEIGHTS,
+        device=dev,
+        dnn=False,
+        data=None,
+        fp16=(device == "cuda")
+    )
     stride = int(model.stride)
-    imgsz = check_img_size(OD_IMG_SIZE, s=stride)  # OD_IMG_SIZE you already have (e.g. 416)
+    imgsz = check_img_size(OD_IMG_SIZE, s=stride)
 
     model.eval()
-    return model, imgsz, stride
+    return model, imgsz, stride, YOLO_DIR
+
 
 
 
@@ -281,10 +295,12 @@ def main():
     print("[INFO] Loaded control model. Device:", device)
 
     # ---- load YOLO ----
-    od_model, od_imgsz, od_stride = load_yolov5_model(device)
-    print("[INFO] Loaded YOLOv5 detector:", OD_WEIGHTS, "imgsz=", od_imgsz, "stride=", od_stride)
+    od_model, od_imgsz, od_stride, YOLO_DIR = load_yolov5_model(device)
 
-    # Import YOLO helpers AFTER yolov5 path was added in load_yolov5_model()
+    # make sure YOLO_DIR is still first
+    if YOLO_DIR not in sys.path:
+        sys.path.insert(0, YOLO_DIR)
+
     from utils.general import non_max_suppression, scale_boxes
     from utils.augmentations import letterbox
 
@@ -390,8 +406,8 @@ def main():
                 # 4) NMS
                 pred_od = non_max_suppression(
                     pred_od,
-                    conf_thres=OD_CONF,      # your normal conf threshold
-                    iou_thres=OD_IOU,
+                    conf_thres=OD_CONF_DETECT,  # show boxes threshold
+                    iou_thres=0.45,             # good default
                     max_det=20
                 )
 
