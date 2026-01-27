@@ -18,10 +18,6 @@ from inputs import get_gamepad, UnpluggedError
 from jetcam.csi_camera import CSICamera
 from jetracer.nvidia_racecar import NvidiaRacecar
 
-    # Now we can import YOLOv5 internals
-from models.common import DetectMultiBackend
-from utils.general import check_img_size
-from utils.torch_utils import select_device
 
 # -----------------------------
 # Model (must match training exactly)
@@ -232,6 +228,11 @@ def load_yolov5_model(device):
     # Add yolov5 to python path so we can import its code
     if YOLO_DIR not in sys.path:
         sys.path.insert(0, YOLO_DIR)
+
+    # Now we can import YOLOv5 internals
+    from models.common import DetectMultiBackend
+    from utils.general import check_img_size
+    from utils.torch_utils import select_device
 
     # pick device
     dev = select_device('0' if device == "cuda" else 'cpu')
