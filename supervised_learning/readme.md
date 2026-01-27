@@ -8,11 +8,6 @@
 
  python3 label_from_photos.py --session ./data/turn_more --k 0.9 --deadzone 0.07 --steering-limit 0.9 --throttle 0.2
  
-
-wave_full
-
-
- 
  ### train the model:
 
  train_control_cnn.py
@@ -26,6 +21,11 @@ drive_autonomous.py
 
 python3 drive_autonomous.py
 
+### autonomous driving with object detection (YOLOv5):
+
+drive_autonomous_yolo.py
+
+python3 drive_autonomous_yolo.py
 
 ### evaluation model performance
 
@@ -33,4 +33,23 @@ eval_model.py
 
 python3 eval_model.py
 
+### testing motors' steering:
 
+test.py
+
+python3 test.py
+
+
+### training YOLO5:
+
+yolov5 -> train.py
+
+cd yolov5
+
+python train.py \
+  --img 416 \
+  --batch 16 \
+  --epochs 150 \
+  --data ../datasets/od/data.yaml \
+  --weights yolov5n.pt \
+  --name od_yolov5n
