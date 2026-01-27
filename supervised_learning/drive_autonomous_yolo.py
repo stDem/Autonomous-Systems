@@ -10,6 +10,7 @@ from threading import Thread, Lock
 import cv2
 import numpy as np
 
+import os, sys
 import torch
 import torch.nn as nn
 
@@ -17,6 +18,10 @@ from inputs import get_gamepad, UnpluggedError
 from jetcam.csi_camera import CSICamera
 from jetracer.nvidia_racecar import NvidiaRacecar
 
+    # Now we can import YOLOv5 internals
+from models.common import DetectMultiBackend
+from utils.general import check_img_size
+from utils.torch_utils import select_device
 
 # -----------------------------
 # Model (must match training exactly)
@@ -219,26 +224,26 @@ def ema(prev, new, smooth):
 
 
 def load_yolov5_model(device):
-    """
-    Loads YOLOv5 model. Best practice on Jetson:
-    - clone yolov5 repo locally
-    - use torch.hub with source='local'
-    """
-    try:
-        # If you have yolov5 folder рядом (recommended):
-        #   git clone https://github.com/ultralytics/yolov5
-        # Then this works offline:
-        model = torch.hub.load("./yolov5", "custom", path=OD_WEIGHTS, source="local")
-    except Exception as e:
-        print("[ERROR] Failed to load YOLOv5 via local hub. Ensure yolov5 repo exists in current dir.")
-        raise
 
-    model.to(device)
+    HERE = os.path.dirname(os.path.abspath(__file__))
+    YOLO_DIR = os.path.join(HERE, "yolov5")
+    WEIGHTS = OD_WEIGHTS  # keep your existing variable
+
+    # Add yolov5 to python path so we can import its code
+    if YOLO_DIR not in sys.path:
+        sys.path.insert(0, YOLO_DIR)
+
+    # pick device
+    dev = select_device('0' if device == "cuda" else 'cpu')
+
+    # Load model backend (works for .pt)
+    model = DetectMultiBackend(WEIGHTS, device=dev, dnn=False, data=None, fp16=(device == "cuda"))
+    stride = int(model.stride)
+    imgsz = check_img_size(OD_IMG_SIZE, s=stride)  # OD_IMG_SIZE you already have (e.g. 416)
+
     model.eval()
-    # set inference size and conf threshold for display
-    model.conf = OD_CONF_DETECT
-    model.iou = 0.45
-    return model
+    return model, imgsz, stride
+
 
 
 def draw_detections(frame_bgr, dets_xyxy, names):
@@ -275,8 +280,13 @@ def main():
     print("[INFO] Loaded control model. Device:", device)
 
     # ---- load YOLO ----
-    od_model = load_yolov5_model(device)
-    print("[INFO] Loaded YOLOv5 detector:", OD_WEIGHTS)
+    od_model, od_imgsz, od_stride = load_yolov5_model(device)
+    print("[INFO] Loaded YOLOv5 detector:", OD_WEIGHTS, "imgsz=", od_imgsz, "stride=", od_stride)
+
+    # Import YOLO helpers AFTER yolov5 path was added in load_yolov5_model()
+    from utils.general import non_max_suppression, scale_boxes
+    from utils.augmentations import letterbox
+
 
     # ---- init car ----
     car = NvidiaRacecar()
@@ -355,18 +365,44 @@ def main():
             auto_thr = float(pred[1])
 
             # ---- run detector every N frames ----
+
             frame_i += 1
             if (frame_i % DETECT_EVERY) == 0:
-                # YOLOv5 expects RGB
-                od_in = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                results = od_model(od_in, size=OD_IMG_SIZE)
-                # results.xyxy[0] tensor Nx6
-                det = results.xyxy[0]
+                # 1) Letterbox resize to od_imgsz (keeps aspect ratio)
+                im0 = frame_bgr  # BGR original
+                lb = letterbox(im0, new_shape=od_imgsz, stride=od_stride, auto=True)[0]
+
+                # 2) BGR->RGB, HWC->CHW, to tensor
+                img_od = lb[:, :, ::-1].transpose(2, 0, 1)
+                img_od = np.ascontiguousarray(img_od)
+
+                img_od = torch.from_numpy(img_od).to(od_model.device)
+                img_od = img_od.half() if getattr(od_model, "fp16", False) else img_od.float()
+                img_od /= 255.0
+                if img_od.ndimension() == 3:
+                    img_od = img_od.unsqueeze(0)
+
+                # 3) Inference
+                with torch.no_grad():
+                    pred_od = od_model(img_od)
+
+                # 4) NMS
+                pred_od = non_max_suppression(
+                    pred_od,
+                    conf_thres=OD_CONF,      # your normal conf threshold
+                    iou_thres=OD_IOU,
+                    max_det=20
+                )
+
+                det = pred_od[0]  # detections for first image
                 if det is None or len(det) == 0:
                     last_dets = np.zeros((0, 6), dtype=np.float32)
                 else:
+                    # 5) Scale boxes back to original image size
+                    det[:, :4] = scale_boxes(img_od.shape[2:], det[:, :4], im0.shape).round()
                     last_dets = det.detach().cpu().numpy().astype(np.float32)
 
+                # Draw detections (expects Nx6: x1 y1 x2 y2 conf cls)
                 last_det_vis = draw_detections(frame_bgr, last_dets, CLASSES)
 
                 # update stability counters (per class)
@@ -377,12 +413,12 @@ def main():
                     if conf >= OD_CONF_TRIGGER:
                         seen_classes.add(cls)
 
-                # increment seen, reset not seen
                 for cls in range(len(CLASSES)):
                     if cls in seen_classes:
                         stable_count[cls] = stable_count.get(cls, 0) + 1
                     else:
                         stable_count[cls] = 0
+
 
             # ---- choose command by mode ----
             if mode == MODE_STOP:
