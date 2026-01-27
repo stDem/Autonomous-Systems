@@ -228,7 +228,7 @@ def load_yolov5_model(device):
         # If you have yolov5 folder рядом (recommended):
         #   git clone https://github.com/ultralytics/yolov5
         # Then this works offline:
-        model = torch.hub.load("yolov5", "custom", path=OD_WEIGHTS, source="local")
+        model = torch.hub.load("./yolov5", "custom", path=OD_WEIGHTS, source="local")
     except Exception as e:
         print("[ERROR] Failed to load YOLOv5 via local hub. Ensure yolov5 repo exists in current dir.")
         raise
