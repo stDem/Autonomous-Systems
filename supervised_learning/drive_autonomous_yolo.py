@@ -317,7 +317,7 @@ def main():
     if YOLO_DIR not in sys.path:
         sys.path.insert(0, YOLO_DIR)
 
-    from utils.general import non_max_suppression, scale_boxes
+    from utils.general import non_max_suppression, scale_coords
     from utils.augmentations import letterbox
 
 
@@ -432,7 +432,7 @@ def main():
                     last_dets = np.zeros((0, 6), dtype=np.float32)
                 else:
                     # 5) Scale boxes back to original image size
-                    det[:, :4] = scale_boxes(img_od.shape[2:], det[:, :4], im0.shape).round()
+                    det[:, :4] = scale_coords(img_od.shape[2:], det[:, :4], im0.shape).round()
                     last_dets = det.detach().cpu().numpy().astype(np.float32)
 
                 # Draw detections (expects Nx6: x1 y1 x2 y2 conf cls)
