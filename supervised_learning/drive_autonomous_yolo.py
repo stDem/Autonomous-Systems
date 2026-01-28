@@ -277,18 +277,86 @@ def load_yolov5_model(device):
 
 
 
+def _wrap_text(text, max_px, font, font_scale, thickness):
+    """Wrap text into multiple lines so each line fits max_px in width."""
+    words = text.split(" ")
+    lines = []
+    cur = ""
+    for w in words:
+        trial = (cur + " " + w).strip()
+        (tw, th), _ = cv2.getTextSize(trial, font, font_scale, thickness)
+        if tw <= max_px or cur == "":
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
 def draw_detections(frame_bgr, dets_xyxy, names):
-    """
-    dets_xyxy: numpy Nx6 = [x1,y1,x2,y2,conf,cls]
-    """
     out = frame_bgr.copy()
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    thickness = 1
+
+    h, w = out.shape[:2]
+
     for d in dets_xyxy:
         x1, y1, x2, y2, conf, cls = d
+        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
         cls = int(cls)
+
+        # Box
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        # Full label text
         label = "{} {:.2f}".format(names[cls], float(conf))
-        cv2.rectangle(out, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-        cv2.putText(out, label, (int(x1), int(y1) - 6),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+
+        # Decide where to place label: below if near top
+        pad = 4
+        max_label_width = max(60, min(w - x1 - 2, 240))  # wrap if too long
+
+        lines = _wrap_text(label, max_label_width, font, font_scale, thickness)
+
+        # Compute label block size
+        line_h = cv2.getTextSize("Ag", font, font_scale, thickness)[0][1] + 6
+        block_h = line_h * len(lines) + pad
+        block_w = 0
+        for line in lines:
+            (tw, th), _ = cv2.getTextSize(line, font, font_scale, thickness)
+            block_w = max(block_w, tw)
+        block_w += 2 * pad
+
+        # Default: above the box
+        y_top = y1 - block_h - 2
+        if y_top < 0:
+            # not enough space -> draw below
+            y_top = y2 + 2
+            if y_top + block_h > h:
+                # clamp inside frame
+                y_top = max(0, h - block_h - 2)
+
+        x_left = x1
+        if x_left + block_w > w:
+            x_left = max(0, w - block_w - 2)
+
+        # Filled background
+        cv2.rectangle(out,
+                      (x_left, y_top),
+                      (x_left + block_w, y_top + block_h),
+                      (0, 255, 0), -1)
+
+        # Draw each line
+        y_text = y_top + pad + line_h - 8
+        for line in lines:
+            cv2.putText(out, line,
+                        (x_left + pad, y_text),
+                        font, font_scale, (0, 0, 0), thickness, cv2.LINE_AA)
+            y_text += line_h
+
     return out
 
 
@@ -361,7 +429,7 @@ def main():
                 time.sleep(0.01)
                 continue
 
-            frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+            frame_bgr = frame_rgb
 
             # ---- read gamepad ----
             with shared.lock:
