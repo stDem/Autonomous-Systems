@@ -2,7 +2,7 @@
 
  1. data_collection.py
 
- python3 data_collection.py --data-root ./data --session-name test --save-interval 0.5
+ python3 data_collection.py --data-root ./data --session-name new_man --save-interval 0.5
 
  2. label_from_photos.py
 
