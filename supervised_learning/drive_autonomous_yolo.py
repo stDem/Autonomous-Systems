@@ -18,6 +18,22 @@ from inputs import get_gamepad, UnpluggedError
 from jetcam.csi_camera import CSICamera
 from jetracer.nvidia_racecar import NvidiaRacecar
 
+# ---- Torch 1.6 compatibility: add nn.SiLU if missing ----
+if not hasattr(nn, "SiLU"):
+    class SiLU(nn.Module):
+        def __init__(self, inplace=False):
+            super(SiLU, self).__init__()
+            self.inplace = inplace
+
+        def forward(self, x):
+            return x * torch.sigmoid(x)
+
+    nn.SiLU = SiLU  # torch.nn.SiLU
+
+    # also patch the exact path torch.load() expects
+    import torch.nn.modules.activation as activation
+    activation.SiLU = SiLU
+
 
 # -----------------------------
 # Model (must match training exactly)
