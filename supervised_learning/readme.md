@@ -50,6 +50,6 @@ python train.py \
   --img 416 \
   --batch 16 \
   --epochs 150 \
-  --data ../datasets/od/data.yaml \
+  --data ../Autonomous-Systems/supervised_learning/datasets/od/data.yaml \
   --weights yolov5n.pt \
   --name od_yolov5n

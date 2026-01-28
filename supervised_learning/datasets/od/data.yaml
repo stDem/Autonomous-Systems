@@ -1,6 +1,8 @@
 path: /Users/anst/Library/Mobile Documents/com~apple~CloudDocs/thws/autonomous systems/Autonomous-Systems/supervised_learning/datasets/od
 train: images/train
 val: images/val
+
+nc: 10
 names:
   0: child girl
   1: woman
