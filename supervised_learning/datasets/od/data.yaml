@@ -5,10 +5,10 @@ names:
   0: child girl
   1: woman
   2: man
-  3: give way sign
-  4: priority road sign
-  5: stop sign
-  6: turn right ahead sign
-  7: warning sign
-  8: zone 30 sign
-  9: zone 30 stop sign
+  3: give way
+  4: priority road
+  5: stop
+  6: turn right ahead
+  7: warning
+  8: zone 30
+  9: zone 30 end
