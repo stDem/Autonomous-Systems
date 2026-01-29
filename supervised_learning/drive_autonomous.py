@@ -329,7 +329,7 @@ def main():
             thr_s = ema(thr_s, thr_cmd, THROTTLE_SMOOTH)
 
             # ---- apply to car ----
-            car.steering = float(steer_s)
+            car.steering = -float(steer_s)
             car.throttle = float(thr_s)
 
             # ---- optional debug window ----
