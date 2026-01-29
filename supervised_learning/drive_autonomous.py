@@ -84,8 +84,8 @@ class Dave2Small(nn.Module):
 # Safety / tuning parameters
 # -----------------------------
 STEERING_CLAMP = 0.9     # limit steering magnitude
-THROTTLE_MIN = 0.10       # no reverse for first real test
-THROTTLE_MAX = 0.10       # keep below your MAX_THROTTLE (0.2) at first
+THROTTLE_MIN = 0.11       # no reverse for first real test
+THROTTLE_MAX = 0.11       # keep below your MAX_THROTTLE (0.2) at first
 
 # smoothing (0..1). Higher = smoother, slower reaction.
 STEER_SMOOTH = 0.0
@@ -329,7 +329,7 @@ def main():
             thr_s = ema(thr_s, thr_cmd, THROTTLE_SMOOTH)
 
             # ---- apply to car ----
-            car.steering = -float(steer_s)
+            car.steering = float(steer_s)
             car.throttle = float(thr_s)
 
             # ---- optional debug window ----
