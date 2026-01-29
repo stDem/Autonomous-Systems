@@ -2,11 +2,11 @@
 
  1. data_collection.py
 
- python3 data_collection.py --data-root ./data --session-name new_full11 --save-interval 0.5
+ python3 data_collection.py --data-root ./data --session-name new_full --save-interval 0.5
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/new_full11 --k 0.7 --deadzone 0.07 --steering-limit 0.9 --throttle 0.2
+ python3 label_from_photos.py --session ./data/new_full10 --k 0.7 --deadzone 0.07 --steering-limit 0.9 --throttle 0.2
  
  ### train the model:
 
