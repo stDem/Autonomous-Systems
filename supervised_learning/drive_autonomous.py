@@ -230,7 +230,7 @@ def main():
 
     steer_bias = float(norm.get("steer_bias", 0.0))
     # ---- load model ----
-    model = Dave2Small(dropout_p=0.6).to(device)
+    model = Dave2Small(dropout_p=0.2).to(device)
     model.load_state_dict(torch.load("./models/best_control_cnn.pth", map_location=device))
     model.eval()
     print("[INFO] Loaded model + norm. Device:", device)
@@ -329,7 +329,7 @@ def main():
             thr_s = ema(thr_s, thr_cmd, THROTTLE_SMOOTH)
 
             # ---- apply to car ----
-            car.steering = -float(steer_s)
+            car.steering = float(steer_s)
             car.throttle = float(thr_s)
 
             # ---- optional debug window ----
