@@ -607,8 +607,8 @@ def parse_args():
 
     p.add_argument("--num-workers", type=int, default=2)
 
-    p.add_argument("--dropout", type=float, default=0.6)
-    p.add_argument("--aug-strength", type=float, default=0.8)
+    p.add_argument("--dropout", type=float, default=0.2)
+    p.add_argument("--aug-strength", type=float, default=0.2)
 
     # Default ON (disable with flag)
     p.add_argument("--no-compute-img-stats", action="store_true",
