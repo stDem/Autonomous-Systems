@@ -256,7 +256,7 @@ def compute_image_mean_std(samples, resize_wh, max_images=500):
 # -------------------------
 class DrivingDataset(Dataset):
     def __init__(self, samples, input_w, input_h, img_mean, img_std,
-                 train=True, aug_strength=0.8, steer_bias=0.0):
+                 train=True, aug_strength=0.2, steer_bias=0.0):
         self.samples = samples
         self.w = int(input_w)
         self.h = int(input_h)
@@ -320,7 +320,7 @@ class DrivingDataset(Dataset):
 # Model (must match drive code exactly)
 # -------------------------
 class Dave2Small(nn.Module):
-    def __init__(self, dropout_p=0.6):
+    def __init__(self, dropout_p=0.2):
         super(Dave2Small, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(3, 24, kernel_size=5, stride=2),
