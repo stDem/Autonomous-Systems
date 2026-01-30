@@ -90,7 +90,7 @@ STEERING_CLAMP = 0.9
 THROTTLE_MIN = 0.0
 THROTTLE_MAX = 0.135
 
-STEER_SMOOTH = 0.0
+STEER_SMOOTH = 0.3
 THROTTLE_SMOOTH = 0.0
 
 OVERRIDE_STEER_THRESH = 0.20
@@ -107,12 +107,12 @@ DETECT_EVERY = 3                      # run detector every N frames (speed)
 # Stability + cooldown (to trigger once per pass)
 OD_CONF_DETECT = 0.55                 # show boxes
 OD_CONF_TRIGGER = 0.70                # trigger actions only if very confident
-OD_STABLE_FRAMES = 2                  # must be seen this many consecutive detector runs
-OD_COOLDOWN_SEC = 8.0                 # prevent repeated triggers while passing sign
+OD_STABLE_FRAMES = 3                  # must be seen this many consecutive detector runs
+OD_COOLDOWN_SEC = 3.0                 # prevent repeated triggers while passing sign
 
 # Throttle behavior
-SLOW_FACTOR_PERSON = 0.65             # child girl / woman / man
-SLOW_FACTOR_ZONE30 = 0.70             # zone30
+SLOW_FACTOR_PERSON = 0.55             # child girl / woman / man
+SLOW_FACTOR_ZONE30 = 0.50             # zone30
 STOP_HOLD_SEC = 1.0                   # stop sign: full stop for 1 sec
 
 
