@@ -12,7 +12,7 @@
 
  train_control_cnn.py
 
-python3 train_control_cnn.py --train-dirs ./data/full_manual ./data/full_manual_dark ./data/full_manual_big ./data/straight ./data/curves ./data/curves_main ./data/wave_full ./data/half_manual ./data/turn ./data/turn_more ./data/turn_more2 --val-dirs ./data/full_path --out-dir ./models --aug-strength 0.2 --dropout 0.2 --patience 20
+python3 train_control_cnn.py --train-dirs ./data/full_manual ./data/full_manual_dark ./data/full_manual_big ./data/straight ./data/curves ./data/curves_main ./data/wave_full ./data/half_manual ./data/turn ./data/turn_more ./data/turn_more2 --val-dirs ./data/full_path --out-dir ./models --aug-strength 0.2 --dropout 0.2 --patience 50
 
 python3 train_control_cnn.py --train-dirs ./data/new_full ./data/new_full2 ./data/new_full4 ./data/new_full5 ./data/new_full6 ./data/new_full7 ./data/new_full8 ./data/new_full10 ./data/new_full11 ./data/straight --val-dirs ./data/new_full3 ./data/new_full9 --out-dir ./models --aug-strength 0.2 --dropout 0.2 --patience 20
 
