@@ -88,9 +88,9 @@ class Dave2Small(nn.Module):
 # -----------------------------
 STEERING_CLAMP = 0.9
 THROTTLE_MIN = 0.0
-THROTTLE_MAX = 0.137
+THROTTLE_MAX = 0.14
 
-STEER_SMOOTH = 0.1
+STEER_SMOOTH = 0.0
 THROTTLE_SMOOTH = 0.5
 
 OVERRIDE_STEER_THRESH = 0.20
