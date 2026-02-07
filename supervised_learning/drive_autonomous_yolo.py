@@ -565,13 +565,9 @@ def main():
                         last_trigger[ID_ZONE30STOP] = now
                         zone30_active = False
 
-                    # people slow-down (any of these)
-                    people_seen = (
-                        stable_count.get(ID_CHILD_GIRL, 0) >= OD_STABLE_FRAMES or
-                        stable_count.get(ID_WOMAN, 0) >= OD_STABLE_FRAMES or
-                        stable_count.get(ID_MAN, 0) >= OD_STABLE_FRAMES
-                    )
-                    if people_seen:
+                    # slow down ONLY for child girl
+                    child_seen = (stable_count.get(ID_CHILD_GIRL, 0) >= OD_STABLE_FRAMES)
+                    if child_seen:
                         thr_cmd = thr_cmd * SLOW_FACTOR_PERSON
 
                     if zone30_active:
