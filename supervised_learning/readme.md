@@ -55,3 +55,4 @@ python train.py \
   --data ../Autonomous-Systems/supervised_learning/datasets/od/data.yaml \
   --weights yolov5n.pt \
   --name od_yolov5n
+
