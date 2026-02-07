@@ -6,7 +6,7 @@
 
  2. label_from_photos.py
 
- python3 label_from_photos.py --session ./data/turn_light --k 0.9 --deadzone 0.07 --steering-limit 0.9 --throttle 0.2
+ python3 label_from_photos.py --session ./data/turn_more2 --k 0.9 --deadzone 0.07 --steering-limit 0.9 --throttle 0.2
  
  ### train the model:
 
