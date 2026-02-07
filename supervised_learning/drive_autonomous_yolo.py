@@ -105,14 +105,14 @@ OD_IMG_SIZE = 416                     # 320/416/640 (Nano: start 416 or 320)
 DETECT_EVERY = 3                      # run detector every N frames (speed)
 
 # Stability + cooldown (to trigger once per pass)
-OD_CONF_DETECT = 0.55                 # show boxes
+OD_CONF_DETECT = 0.70                 # show boxes
 OD_CONF_TRIGGER = 0.70                # trigger actions only if very confident
 OD_STABLE_FRAMES = 3                  # must be seen this many consecutive detector runs
-OD_COOLDOWN_SEC = 3.0                 # prevent repeated triggers while passing sign
+OD_COOLDOWN_SEC = 4.0                 # prevent repeated triggers while passing sign
 
 # Throttle behavior
-SLOW_FACTOR_PERSON = 0.55             # child girl / woman / man
-SLOW_FACTOR_ZONE30 = 0.50             # zone30
+SLOW_FACTOR_PERSON = 0.2             # child girl / woman / man
+SLOW_FACTOR_ZONE30 = 0.2             # zone30
 STOP_HOLD_SEC = 1.0                   # stop sign: full stop for 1 sec
 
 
