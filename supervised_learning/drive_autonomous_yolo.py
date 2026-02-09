@@ -90,7 +90,7 @@ STEERING_CLAMP = 0.9
 THROTTLE_MIN = 0.0
 THROTTLE_MAX = 0.145
 
-STEER_SMOOTH = 0.3
+STEER_SMOOTH = 0.4
 THROTTLE_SMOOTH = 0.5
 
 OVERRIDE_STEER_THRESH = 0.20
@@ -105,8 +105,8 @@ OD_IMG_SIZE = 416                     # 320/416/640 (Nano: start 416 or 320)
 DETECT_EVERY = 3                      # run detector every N frames (speed)
 
 # Stability + cooldown (to trigger once per pass)
-OD_CONF_DETECT = 0.65                 # show boxes
-OD_CONF_TRIGGER = 0.65                # trigger actions only if very confident
+OD_CONF_DETECT = 0.55                 # show boxes
+OD_CONF_TRIGGER = 0.55                # trigger actions only if very confident
 OD_STABLE_FRAMES = 3                  # must be seen this many consecutive detector runs
 OD_COOLDOWN_SEC = 4.0                 # prevent repeated triggers while passing sign
 
