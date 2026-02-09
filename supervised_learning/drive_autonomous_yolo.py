@@ -90,7 +90,7 @@ STEERING_CLAMP = 0.9
 THROTTLE_MIN = 0.0
 THROTTLE_MAX = 0.15
 
-STEER_SMOOTH = 0.1
+STEER_SMOOTH = 0.2
 THROTTLE_SMOOTH = 0.5
 
 OVERRIDE_STEER_THRESH = 0.20
@@ -111,8 +111,8 @@ OD_STABLE_FRAMES = 3                  # must be seen this many consecutive detec
 OD_COOLDOWN_SEC = 4.0                 # prevent repeated triggers while passing sign
 
 # Throttle behavior
-SLOW_FACTOR_PERSON = 0.2             # child girl / woman / man
-SLOW_FACTOR_ZONE30 = 0.2             # zone30
+SLOW_FACTOR_PERSON = 0.7             # child girl / woman / man
+SLOW_FACTOR_ZONE30 = 0.7             # zone30
 STOP_HOLD_SEC = 1.0                   # stop sign: full stop for 1 sec
 
 
