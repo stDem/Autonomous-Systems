@@ -1,6 +1,8 @@
  
  # Autonomous driving car JetRacer NVIDIA (supervised learning + object detection)
  
+ ![main](./assets/main.png)
+
  ## <span style="color: #AE56E8;"> Two approaches were implemented within the framework of this project:</span>
 
  1. **Waveshare** approach: 
