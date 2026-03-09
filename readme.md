@@ -1,7 +1,7 @@
  
  # Autonomous driving car JetRacer NVIDIA (supervised learning + object detection)
  
- ## Two approaches were implemented within the framework of this project:
+ ## <span style="color: #AE56E8;"> Two approaches were implemented within the framework of this project:</span>
 
  1. **Waveshare** approach: 
  
@@ -38,35 +38,38 @@ I followed **NVIDIA** approach. So I gathered data by driving car on the map usi
 Architecturally, this is a DAVE-2 style network: same conv stack (5×5 stride-2 then 3×3) and same FC head (100–50–10). I modernized it with BatchNorm and Dropout and adapted the output to 2 regression values for steering/throttle.
 
 My network is split into two parts:
-1. Convolutional feature extractor (self.conv)Takes the image and learns visual features like edges, lane boundaries, texture, track borders.
-Fully-connected head (self.fc)Takes the extracted features and outputs 2 continuous values (steering/throttle).
-What conv does:
-5×5 filters scan the image to detect low-level patterns (edges, contrast boundaries).
-stride=2 downsamples (roughly halves resolution), making the network faster and forcing it to learn larger-scale structure.
-BatchNorm stabilizes training (keeps activations well-scaled).
-ReLU adds non-linearity so it can learn complex patterns.
-Conv block 4. What it does:
-3×3 is used when you’re already at a lower resolution: it refines features without further downsampling.
-Expands to 64 channels (richer feature representation).
+1. **Convolutional feature extractor** (self.conv)
+Takes the image and learns visual features like edges, lane boundaries, texture, track borders.
+2. **Fully-connected head** (self.fc)
+Takes the extracted features and outputs 2 continuous values (steering/throttle).
 
-Fully-connected:
+**What conv does:**
+- 5×5 filters scan the image to detect low-level patterns (edges, contrast boundaries).
+- stride=2 downsamples (roughly halves resolution), making the network faster and forcing it to learn larger-scale structure.
+- BatchNorm stabilizes training (keeps activations well-scaled).
+- ReLU adds non-linearity so it can learn complex patterns.
+
+**Conv block 4. What it does:**
+- 3×3 is used when you’re already at a lower resolution: it refines features without further downsampling.
+- Expands to 64 channels (richer feature representation).
+
+**Fully-connected:**
+
 nn.Linear(64 * 1 * 18, 100)
 
-Flatten convolutional output into 1D vector (So each image becomes a 1152-dimensional feature vector).
-100 neurons - learn deep relationships in extracted features.
-The FC head turns those 1152 features into your final control outputs (steering/throttle).
+- Flatten convolutional output into 1D vector (So each image becomes a 1152-dimensional feature vector).
+- 100 neurons - learn deep relationships in extracted features.
+- The FC head turns those 1152 features into your final control outputs (steering/throttle).
+
+![CNN features](./assets/cnn_features.png)
+
+## <span style="color: #AE56E8;">Oject detection (YOLO 5)</span>
 
 
-
-
-## Oject detection (YOLO 5)
-
-
-
-
+![object detection train](./assets/train_batch0.jpg)
 
  
- ## Files and commands overview:
+ ## <span style="color: #AE56E8;">Files and commands overview</span>
  
  ### Collect the data:
 
